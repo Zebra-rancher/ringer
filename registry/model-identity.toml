@@ -98,3 +98,58 @@ lab = "Meta"
 confidence = "verified"
 source = "manifest model field; OpenRouter slug meta-llama/llama-3.3-70b-instruct:free"
 last_verified = 2026-07-10
+
+[engines.gemini]
+harness = "Gemini CLI"
+access = "Gemini API"
+default_model_key = "gemini-3.5-flash"
+
+[engines.gemini.models."gemini-3.5-flash"]
+display = "Gemini 3.5 Flash"
+lab = "Google"
+confidence = "verified"
+source = "https://ai.google.dev/gemini-api/docs/models"
+last_verified = 2026-09-02
+
+[engines.claude]
+# Claude Code CLI run headless (`-p --model {model} --output-format json`).
+# The per-task manifest "model" field is the CLI's short alias — sonnet, haiku,
+# opus, fable — which resolves to the concrete slug the harness self-reports in
+# `modelUsage` (the keys below). Aliases float across releases: as of
+# 2026-09-03 `--model opus` self-reports claude-opus-5 (NOT 4.8), sonnet ->
+# claude-sonnet-5, haiku -> claude-haiku-4-5-20251001. Serves Anthropic models
+# only. Engine model_default = "sonnet" (see [engines.claude] in
+# ~/.config/ringer/config.toml). Auth is the Claude subscription/OAuth token; a
+# headless worker needs a long-lived token from `claude setup-token`. Keys are
+# the harness-reported slugs per docs/TAXONOMY.md, not the aliases.
+harness = "Claude Code CLI"
+access = "Claude subscription (OAuth)"
+default_model_key = "claude-sonnet-5"
+
+[engines.claude.models."claude-sonnet-5"]
+display = "Claude Sonnet 5"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model sonnet, run 2026-09-03"
+last_verified = 2026-09-03
+
+[engines.claude.models."claude-opus-5"]
+display = "Claude Opus 5"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model opus, run 2026-09-03"
+last_verified = 2026-09-03
+
+[engines.claude.models."claude-haiku-4-5-20251001"]
+display = "Claude Haiku 4.5"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel claude-haiku-4-5, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model haiku, run 2026-09-03"
+last_verified = 2026-09-03
+
+[engines.claude.models."claude-fable-5-1"]
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty, 1M ctx)
+source = "Claude Code headless modelUsage self-report; --model fable, run 2026-09-03"
+last_verified = 2026-09-03
