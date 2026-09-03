@@ -276,6 +276,12 @@ checks and raw logs support — no vibes, no worker self-reports.
   claude-sonnet-5, haiku -> claude-haiku-4-5-20251001. Register the reported slug, not the alias
   (docs/TAXONOMY.md); an alias-keyed entry shows every model as [unregistered] on the scoreboard.
 
+- 2026-09-03 — fable identity probe (write answer.md, model fable): PASS attempt 1, 52 tok, 17s,
+  self-reports claude-fable-5-1 (1M context, provider firstParty). COST WARNING: ~$0.67 for a
+  trivial probe — fable's list price plus large cache-creation on the 1M window makes it 10x+ the
+  cost of any other lane here. It's an orchestrator-class model; do NOT put it on worker tasks a
+  cheaper lane can pass. Registered for identity/completeness, not as a routing recommendation.
+
 ## Small / flash-class models
 
 - First to choke on long conversational or multi-turn harness tasks —

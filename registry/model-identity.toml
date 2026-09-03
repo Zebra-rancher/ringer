@@ -147,7 +147,9 @@ confidence = "verified"     # harness self-report (modelUsage canonicalModel cla
 source = "Claude Code headless modelUsage self-report; --model haiku, run 2026-09-03"
 last_verified = 2026-09-03
 
-# fable (--model fable, expected slug claude-fable-5-1) is served but not yet
-# run through Ringer, so it stays unregistered until a run self-reports its slug
-# — do not add it from the alias alone (TAXONOMY: aliases only when lineage is
-# unestablished, and this one is establishable by simply running it).
+[engines.claude.models."claude-fable-5-1"]
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty, 1M ctx)
+source = "Claude Code headless modelUsage self-report; --model fable, run 2026-09-03"
+last_verified = 2026-09-03
