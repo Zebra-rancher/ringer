@@ -98,3 +98,54 @@ lab = "Meta"
 confidence = "verified"
 source = "manifest model field; OpenRouter slug meta-llama/llama-3.3-70b-instruct:free"
 last_verified = 2026-07-10
+
+[engines.gemini]
+harness = "Gemini CLI"
+access = "Gemini API"
+default_model_key = "gemini-3.5-flash"
+
+[engines.gemini.models."gemini-3.5-flash"]
+display = "Gemini 3.5 Flash"
+lab = "Google"
+confidence = "verified"
+source = "https://ai.google.dev/gemini-api/docs/models"
+last_verified = 2026-09-02
+
+[engines.claude]
+# Claude Code CLI run headless (`-p --model {model} --output-format json`).
+# The {model} slug is the per-task manifest "model" field — the CLI's short
+# aliases below, or a full ID (claude-opus-4-8, claude-sonnet-5, …). Serves
+# Anthropic models only. model_default = "sonnet" (see [engines.claude] in
+# ~/.config/ringer/config.toml). Auth is the Claude subscription/OAuth token;
+# a headless worker needs a long-lived token from `claude setup-token`.
+harness = "Claude Code CLI"
+access = "Claude subscription (OAuth)"
+default_model_key = "sonnet"
+
+[engines.claude.models."sonnet"]
+display = "Claude Sonnet 5"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code --model alias; engine model_default
+source = "Claude Code --model aliases; config.toml [engines.claude] model_default"
+last_verified = 2026-09-03
+
+[engines.claude.models."haiku"]
+display = "Claude Haiku 4.5"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code --model alias
+source = "Claude Code --model aliases (claude-haiku-4-5)"
+last_verified = 2026-09-03
+
+[engines.claude.models."opus"]
+display = "Claude Opus 4.8"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code --model alias
+source = "Claude Code --model aliases (claude-opus-4-8)"
+last_verified = 2026-09-03
+
+[engines.claude.models."fable"]
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code --model alias
+source = "Claude Code --model aliases (claude-fable-5-1)"
+last_verified = 2026-09-03

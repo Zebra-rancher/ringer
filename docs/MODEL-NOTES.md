@@ -14,6 +14,14 @@ checks and raw logs support — no vibes, no worker self-reports.
 
 ## codex (GPT-5-class, own harness)
 
+- 2026-09-02 — gpt-5.6-sol, code-feature/code-fix (hermes-control-plane build, 7 parallel
+  worktree tasks, bash scripts + bash tests with fakes, reasoning medium/high): 5/7 PASS
+  first or second try (deploy-lane needed the retry). The two FAILs (backup-crypto 549k tok /
+  25 min, update-lane 418k tok / 24 min) had ALL their lane tests green in the exported
+  patch — they failed only because the ChatGPT plan's usage limit hit before fix-summary.md
+  was written. Lesson: on the flat plan, keep a Codex task under ~15 min / ~250k tokens or
+  split it; 7 concurrent high-effort lanes drain the plan window in one run. Never retry
+  into the limit — verify the exported patch by running the lane tests yourself instead.
 - Strongest general worker; the default engine. Spend reasoning effort per
   task via `engine_args` (`["-c", "model_reasoning_effort=low|medium|high"]`)
   — high on gnarly tasks, low on boilerplate.
@@ -83,8 +91,23 @@ checks and raw logs support — no vibes, no worker self-reports.
   half-written trailing line). Codex is the proven lane for both sides of
   the review->fix loop on this codebase.
 
+- 2026-09-03 (GPT-5.6 Sol / Codex, code-feature ×2, code-review ×1, family-scheduling MVP): brief-renderer
+  task (stdlib Python + 21 tests, 6 files) PASSED first try in 11 min / 85k tokens. dave-brain intake task
+  (541-line Deno module + 47 tests + deploy doc) produced correct code on attempt 1 but the run recorded
+  FAIL twice — my check grepped for a plain `ok |` line while deno emitted ANSI colour; fix was
+  `NO_COLOR=1` in the gate, not the worker. Adversarial review task returned 8 findings with real
+  file:line citations; 2 were actionable, 3 argued against ruled scope — treat its verdicts as input, not
+  gates. Lesson: run `--baseline` AND a dry pass of the verify script on colourised tool output.
+
 ## glm-5.2 via opencode (`openrouter/z-ai/glm-5.2`)
 
+- 2026-09-02 — glm-5.2, code-fix + code-review (hermes-control-plane, bash scripts/tests):
+  fix lanes 4/5 PASS (3 first-try, 1 on retry); the one FAIL was MY check's quoting (nested
+  single quotes in --verify-command) not the model — its edits were correct and exported by
+  hand. Review scouts: 3/6 met the report contract; the two that failed were given too wide a
+  surface (whole restore+mirror lane) or wrote the report last and timed out — narrow surfaces
+  and 'write the skeleton first' fixed it. ~$0.02-0.05/task. Good enough for well-specified
+  bash fixes with executed tests; keep reviews to <= 8 entry-point files per scout.
 - The cheap-intelligence default (~$0.74/M in, $2.33/M out, 2026-07 —
   20-30x cheaper output than frontier coding models). Reliable on
   mechanical, tightly-specced work: file edits, format conversions,
@@ -147,6 +170,11 @@ checks and raw logs support — no vibes, no worker self-reports.
   contention findings (full catalog re-ingest per sync; schema writes on
   read paths) plus an empirical XSS all-clear on the new DOM surfaces.
   Third proven-tier structured review today.
+
+- 2026-09-03 — `openrouter/z-ai/glm-5.2:free` audition (docs, hermes-meal runbook): both attempts
+  died on OpenRouter upstream 429 ("temporarily rate-limited upstream", shared free pool) before
+  any output; 0 deliverable. Not a model failure — the free pool was saturated at 12:05 PT. Don't
+  put the free slug on anything with a deadline; the paid `z-ai/glm-5.2` slug is the real lane.
 
 ## kimi-k2.7 via opencode (`openrouter/moonshotai/kimi-k2.7-code`)
 
@@ -217,6 +245,29 @@ checks and raw logs support — no vibes, no worker self-reports.
   ladder now says: audition free models on SHORT mechanical tasks first;
   long-diff review is a proven-tier lane.
 
+## gemini-3.5-flash (Gemini CLI engine, free tier)
+
+- 2026-09-03 — gemini-3.5-flash (free lane) rescued hermes-meal round 5 when Codex hit its plan
+  limit and OpenRouter was out of credit: code-fix (Playwright capture retry, ~100 lines + 2 tests)
+  PASS on attempt 2 at 1.23M tokens; docs (contracts.md signatures + a one-line logging change)
+  PASS on attempt 2 at 86k tokens — attempt 1 ran the suite but staged NOTHING (empty_patch), i.e.
+  it read and reasoned without writing. Usable as a third lane for small, well-specified tasks;
+  expect a wasted first attempt and a token bill 10x Codex's.
+
+## claude (Claude Code CLI engine — Anthropic models: sonnet/haiku/opus/fable)
+
+- 2026-09-03 — claude-lane bring-up, probe (write answer.md, model haiku): PASS attempt 1, 81 tok,
+  ~15s, ~$0.05. But it took a long auth fight to get there — the engine is fine, the AUTH is the
+  footgun. The headless worker uses `$CLAUDE_CODE_OAUTH_TOKEN` (a `claude setup-token` value in the
+  vault as `claude-code/oauth_token`, exported by ~/.zshenv). Two traps: (1) that token has NO
+  refresh token, so it silently expires — symptom is `session expired, could not be refreshed`
+  (instant, no API call); re-mint with `claude setup-token` then `~/.claude/scripts/set-claude-token.sh`.
+  (2) A terminal paste truncates long tokens — a 79-of-108-char token stored fine but returned
+  `401 OAuth access token is invalid` (real API call, ~1.2s). The set-claude-token.sh helper reads
+  the clipboard whole, strips newlines, and rejects <80 chars — always vault through it, never a
+  manual `creds set`. Interactive `/login` and the Desktop app's host-auth do NOT provision this
+  lane; only the setup-token path does.
+
 ## Small / flash-class models
 
 - First to choke on long conversational or multi-turn harness tasks —
@@ -280,6 +331,12 @@ checks and raw logs support — no vibes, no worker self-reports.
   before blaming the model.
 - 2026-07-06 — opencode sqlite "database is locked" again with just 2
   simultaneous opencode spawns (page-news + page-about-faq); retry absorbed it.
+
+- 2026-09-03 (hermes-meal round 1): the fix-swarm check requires fix-summary.md to START with
+  the line `# Fix Summary`; my spec listed only the four headings, so all four lanes (Codex x3,
+  GLM x1) lost attempt 1 to `missing_title` and passed on retry with identical substance — a
+  spec bug that read as a 0% first-try rate on the scoreboard. Put the exact first line in every
+  spec's output contract (build_r1.py COMMON now does).
 
 ## codex (2026-07-06, bench-operator-proofing)
 - 8/8 code-feature tasks passed attempt 1 across 3 rounds (worktrees mode, Python harness refactor; 108k-406k tokens/task). Specs embedded the approved architecture doc + exact file ownership; checks built fresh uv venvs and ran the full pytest suite.
