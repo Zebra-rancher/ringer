@@ -268,6 +268,14 @@ checks and raw logs support — no vibes, no worker self-reports.
   manual `creds set`. Interactive `/login` and the Desktop app's host-auth do NOT provision this
   lane; only the setup-token path does.
 
+- 2026-09-03 — sonnet vs opus bakeoff (code-feature, `roman_to_int` + subtractive notation, check
+  runs the code on 10 cases): BOTH PASS attempt 1. sonnet 17 tok / 11s, opus 89 tok / 16s — opus
+  ~5x the output tokens and 40% slower for an identical correct result on a small mechanical task,
+  so sonnet is the default lane here; reserve opus for genuinely hard reasoning. IDENTITY GOTCHA:
+  the CLI aliases self-report concrete slugs — `--model opus` -> claude-opus-5 (NOT 4.8), sonnet ->
+  claude-sonnet-5, haiku -> claude-haiku-4-5-20251001. Register the reported slug, not the alias
+  (docs/TAXONOMY.md); an alias-keyed entry shows every model as [unregistered] on the scoreboard.
+
 ## Small / flash-class models
 
 - First to choke on long conversational or multi-turn harness tasks —

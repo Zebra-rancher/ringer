@@ -113,39 +113,41 @@ last_verified = 2026-09-02
 
 [engines.claude]
 # Claude Code CLI run headless (`-p --model {model} --output-format json`).
-# The {model} slug is the per-task manifest "model" field — the CLI's short
-# aliases below, or a full ID (claude-opus-4-8, claude-sonnet-5, …). Serves
-# Anthropic models only. model_default = "sonnet" (see [engines.claude] in
-# ~/.config/ringer/config.toml). Auth is the Claude subscription/OAuth token;
-# a headless worker needs a long-lived token from `claude setup-token`.
+# The per-task manifest "model" field is the CLI's short alias — sonnet, haiku,
+# opus, fable — which resolves to the concrete slug the harness self-reports in
+# `modelUsage` (the keys below). Aliases float across releases: as of
+# 2026-09-03 `--model opus` self-reports claude-opus-5 (NOT 4.8), sonnet ->
+# claude-sonnet-5, haiku -> claude-haiku-4-5-20251001. Serves Anthropic models
+# only. Engine model_default = "sonnet" (see [engines.claude] in
+# ~/.config/ringer/config.toml). Auth is the Claude subscription/OAuth token; a
+# headless worker needs a long-lived token from `claude setup-token`. Keys are
+# the harness-reported slugs per docs/TAXONOMY.md, not the aliases.
 harness = "Claude Code CLI"
 access = "Claude subscription (OAuth)"
-default_model_key = "sonnet"
+default_model_key = "claude-sonnet-5"
 
-[engines.claude.models."sonnet"]
+[engines.claude.models."claude-sonnet-5"]
 display = "Claude Sonnet 5"
 lab = "Anthropic"
-confidence = "verified"     # Claude Code --model alias; engine model_default
-source = "Claude Code --model aliases; config.toml [engines.claude] model_default"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model sonnet, run 2026-09-03"
 last_verified = 2026-09-03
 
-[engines.claude.models."haiku"]
+[engines.claude.models."claude-opus-5"]
+display = "Claude Opus 5"
+lab = "Anthropic"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model opus, run 2026-09-03"
+last_verified = 2026-09-03
+
+[engines.claude.models."claude-haiku-4-5-20251001"]
 display = "Claude Haiku 4.5"
 lab = "Anthropic"
-confidence = "verified"     # Claude Code --model alias
-source = "Claude Code --model aliases (claude-haiku-4-5)"
+confidence = "verified"     # harness self-report (modelUsage canonicalModel claude-haiku-4-5, provider firstParty)
+source = "Claude Code headless modelUsage self-report; --model haiku, run 2026-09-03"
 last_verified = 2026-09-03
 
-[engines.claude.models."opus"]
-display = "Claude Opus 4.8"
-lab = "Anthropic"
-confidence = "verified"     # Claude Code --model alias
-source = "Claude Code --model aliases (claude-opus-4-8)"
-last_verified = 2026-09-03
-
-[engines.claude.models."fable"]
-display = "Claude Fable 5.1"
-lab = "Anthropic"
-confidence = "verified"     # Claude Code --model alias
-source = "Claude Code --model aliases (claude-fable-5-1)"
-last_verified = 2026-09-03
+# fable (--model fable, expected slug claude-fable-5-1) is served but not yet
+# run through Ringer, so it stays unregistered until a run self-reports its slug
+# — do not add it from the alias alone (TAXONOMY: aliases only when lineage is
+# unestablished, and this one is establishable by simply running it).
