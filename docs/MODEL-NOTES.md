@@ -102,6 +102,7 @@ checks and raw logs support — no vibes, no worker self-reports.
   `NO_COLOR=1` in the gate, not the worker. Adversarial review task returned 8 findings with real
   file:line citations; 2 were actionable, 3 argued against ruled scope — treat its verdicts as input, not
   gates. Lesson: run `--baseline` AND a dry pass of the verify script on colourised tool output.
+- 2026-09-13 hermes-dave-brain-memory (code-feature, 2 tasks, real-repo edits): both first-try PASS on substance — a Deno edge-function change (99 tests green) and a 7-module Python plugin with 36 tests. One task was marked FAIL only because the orchestrator's check command had a nested-quote bug (`for … done` inside the --build-command string); the worker's output was correct when the check was run by hand. Lesson is on the check writer: keep --build-command free of inner double quotes and semicolons, or ship a check script.
 
 ## glm-5.2 via opencode (`openrouter/z-ai/glm-5.2`)
 
@@ -179,6 +180,7 @@ checks and raw logs support — no vibes, no worker self-reports.
   died on OpenRouter upstream 429 ("temporarily rate-limited upstream", shared free pool) before
   any output; 0 deliverable. Not a model failure — the free pool was saturated at 12:05 PT. Don't
   put the free slug on anything with a deadline; the paid `z-ai/glm-5.2` slug is the real lane.
+- 2026-09-13 hermes-dave-brain-memory C-alias (code-feature, small patch + 5 tests, ~200k tokens, 22 min, 2 attempts): the WORK was correct (patch applies, 5/5 + existing 16 tests green) but it landed in the task scratch dir, not the repo — the opencode OS sandbox blocked writes to the worktree path, and the worker said so in notes.md. The check then failed on a quoting bug of mine. Two lessons: for opencode workers editing a real repo, confirm the sandbox writable root or expect deliverables in CWD; and GLM did read its own failure honestly, which is worth something.
 
 ## kimi-k2.7 via opencode (`openrouter/moonshotai/kimi-k2.7-code`)
 
@@ -396,3 +398,6 @@ checks and raw logs support — no vibes, no worker self-reports.
 ## Process lessons (2026-07-28, PR #82 review)
 - **Ideas worth keeping from a rejected PR.** PR #82's pre-call gateway was dropped (needs your own API key, so it converts flat-rate OAuth plans into metered API billing; incompatible with Claude Code; and it saves tokens by stripping the tool list, which is the thing that makes the CLI worth using). One idea inside it is worth remembering if the problem ever comes back: an *explicitly blessed* answer cache — key a reviewed answer to the exact request plus the exact selected source packet, and replay it with zero upstream calls, never auto-accepting a model answer. It only fires on byte-identical repeats, which is why it didn't justify 2,000 lines here.
 - **Doc-stated support floors need a CI job or they are fiction.** README promised Python 3.11+ while CI only ever ran 3.12; a 3.12-only f-string reached review with a fully green suite. Either test the floor or move it.
+
+## claude (sonnet) — 2026-09-04, docs/code-fix, harness-cleanup run
+- 3 tasks, 3/3 first-try once the harness was right (rounds 1-2 failed on harness, not model): (1) `--add-dir` in engine_args is variadic and swallowed the spec → "Input must be provided" in 6s; terminate it with `--permission-mode acceptEdits`. (2) Workers are denied Read outside cwd/add-dir; stage copies of home-folder inputs into an added dir. Sonnet caught a templating glitch in a spec ($HOME expanded to a literal path) and did the right thing, flagged it in notes.md. ~$0.24–0.40/task at list.
