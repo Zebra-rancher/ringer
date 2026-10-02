@@ -13,6 +13,10 @@ what happened, and what you'd do differently. Only write what the executed
 checks and raw logs support — no vibes, no worker self-reports.
 
 ## codex (GPT-5-class, own harness)
+- 2026-09-13 (later, same run) — gpt-5.6-sol, code-feature ×14 more (daily-desk widgets, dave-brain fix, VPS python): 13/14 first-try PASS by executed check; the one FAIL (t15 scheduling) was again MY check — an apostrophe in a `--required-text` value ("Anne's desk") inside a single-quoted check string → `/bin/sh: unexpected EOF`, and the retry burned 86k tokens re-reading a shell error it could not fix. Both orchestrator check bugs this run were quoting/path bugs in check_repo_feature invocations, not model failures — lint the CHECK string for quotes before running. Round 6 (t06–t08) died in 20 s on the Codex OAuth usage limit ("try again at 2:15 AM"); no retry into it, Travis topped up credits ~40 min later and the identical manifest passed 4/4. `high` effort on t05/t07/t12/t13/t14/t15/t17 all first-try (100–133k tokens each); default effort on the rest 23–64k. Scaffolding tip confirmed: give create-next-app tasks network_access=true and expect the worker to relocate the npm cache under /private/tmp.
+- 2026-09-13 — gpt-5.6-sol default effort, code-feature (daily-desk-increment-1, unattended Daily Desk build): (1) ~/.codex/config.toml had drifted to `model = "gpt-6-astra"`, which codex-cli 0.152.1 rejects with HTTP 400 "requires a newer version of Codex" — the whole first round failed in 7s. Fix: set the manifest task `model` field explicitly (gpt-5.6-sol); never rely on the CLI-wide default in an unattended run. (2) t01 scaffold: the worker did the job right (create-next-app in place, deps, config) but my check used `--owned '.'` and check_repo_feature's path_allowed cannot match repo-root paths against `.`, so the check false-failed twice (68k tokens). Orchestrator bug: for whole-repo ownership list the top-level paths, or fix path_allowed to treat `.` as everything. (3) Codex's workspace-write sandbox blocks create-next-app's parent-dir writability probe and npm needs `-c sandbox_workspace_write.network_access=true`; the worker routed around both (npm_config_cache in /private/tmp) without being told — good judgment, worth noting for scaffolding tasks. t09/t10 (deno edge-function + 2 migrations + FakeDb tests) passed first try, 43k tokens, 140s.
+
+- 2026-09-07 — gpt-5.6-sol high, code-feature (hermes-meal v2 review tools: db migration + pool + 2 tools + parser + docs, ~14 files): code CORRECT on the worktree (307 tests + behaviour smoke green when I ran the check by hand) but BOTH attempts failed the fix-swarm summary contract — it titled the file '# Round 7 fix summary' and used its own headings even though the spec's output contract named the exact first line. 475k tokens for two attempts. The retry prompt only shows the check tail, which was the summary complaint, so attempt 2 rewrote code instead of the title. Lesson: put the summary contract at the END of long specs too (recency), and consider a lighter summary check.
 
 - 2026-09-02 — gpt-5.6-sol, code-feature/code-fix (hermes-control-plane build, 7 parallel
   worktree tasks, bash scripts + bash tests with fakes, reasoning medium/high): 5/7 PASS
@@ -25,6 +29,26 @@ checks and raw logs support — no vibes, no worker self-reports.
 - Strongest general worker; the default engine. Spend reasoning effort per
   task via `engine_args` (`["-c", "model_reasoning_effort=low|medium|high"]`)
   — high on gnarly tasks, low on boilerplate.
+- 2026-09-22 — finapp-design-shell round 3 (merge resolution + restyle, 2 tasks).
+  Both reported FAIL but both were actually correct: my check prefixed
+  `cd <repo> &&`, so the repo-feature kit's relative `--notes notes.md`
+  no longer resolved to the scratch dir. Build, required-text and
+  git-status assertions all passed. Lesson for the ORCHESTRATOR, not the
+  model: never prefix a kit check with `cd`; pass `--notes` as an absolute
+  path if the check must run elsewhere. Codex resolved 10 conflicted files
+  keeping both sides correctly, and collapsed duplicate success/error
+  return branches into single returns with a ternary (behavior preserved,
+  but it changes SetAskContext call counts, so count-based checks would
+  false-alarm).
+- 2026-09-22 — finapp-design-shell (code-feature, high effort, 7 tasks). Shell task
+  passed first try (173k tokens, 29 min) but worked around a no-network sandbox by
+  editing package.json to `next build --webpack` and loading Geist from Next
+  internals: sandbox constraints leak into the repo unless the spec forbids
+  build-script edits. Six page-migration tasks in worktrees mode all failed
+  attempt 1 on a Turbopack "symlink node_modules points outside filesystem
+  root" panic (orchestrator setup, not the model) and passed on retry
+  (~260-300k tokens, 18-26 min each). Next time: `cp -R` node_modules or
+  build with `--webpack` inside the check, never symlink.
 - 2026-07-05 — carried the heavy lanes of the milk-crate demo rehearsals
   (market read with source allowlist, site build) with clean first-attempt
   passes.
@@ -98,6 +122,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   `NO_COLOR=1` in the gate, not the worker. Adversarial review task returned 8 findings with real
   file:line citations; 2 were actionable, 3 argued against ruled scope — treat its verdicts as input, not
   gates. Lesson: run `--baseline` AND a dry pass of the verify script on colourised tool output.
+- 2026-09-13 hermes-dave-brain-memory (code-feature, 2 tasks, real-repo edits): both first-try PASS on substance — a Deno edge-function change (99 tests green) and a 7-module Python plugin with 36 tests. One task was marked FAIL only because the orchestrator's check command had a nested-quote bug (`for … done` inside the --build-command string); the worker's output was correct when the check was run by hand. Lesson is on the check writer: keep --build-command free of inner double quotes and semicolons, or ship a check script.
+- 2026-09-22 finapp-estate (code-feature, 5 tasks over 3 runs, Next.js/Supabase repo): all 5 correct on substance. Runs 1-2 first-try PASS (migration + stdlib import script; 900-line page). Run 3's two tasks (export renderer, generic edit drawer) were marked FAIL on both attempts because the ORCHESTRATOR's shared check ran `cd <repo>` inside eval, moving every later command out of frontend/; re-run with the fix: 0 failures. Lesson for check writers: never `cd` inside an eval'd assertion; use `git -C` or a subshell. Separately, the sandbox cannot run `npx tsx` (not cached) or fetch Google Fonts for `next build`; the worker reports this honestly in notes.md, so the orchestrator must re-run those checks outside.
 
 ## glm-5.2 via opencode (`openrouter/z-ai/glm-5.2`)
 
@@ -175,6 +201,7 @@ checks and raw logs support — no vibes, no worker self-reports.
   died on OpenRouter upstream 429 ("temporarily rate-limited upstream", shared free pool) before
   any output; 0 deliverable. Not a model failure — the free pool was saturated at 12:05 PT. Don't
   put the free slug on anything with a deadline; the paid `z-ai/glm-5.2` slug is the real lane.
+- 2026-09-13 hermes-dave-brain-memory C-alias (code-feature, small patch + 5 tests, ~200k tokens, 22 min, 2 attempts): the WORK was correct (patch applies, 5/5 + existing 16 tests green) but it landed in the task scratch dir, not the repo — the opencode OS sandbox blocked writes to the worktree path, and the worker said so in notes.md. The check then failed on a quoting bug of mine. Two lessons: for opencode workers editing a real repo, confirm the sandbox writable root or expect deliverables in CWD; and GLM did read its own failure honestly, which is worth something.
 
 ## kimi-k2.7 via opencode (`openrouter/moonshotai/kimi-k2.7-code`)
 
@@ -255,6 +282,10 @@ checks and raw logs support — no vibes, no worker self-reports.
   expect a wasted first attempt and a token bill 10x Codex's.
 
 ## claude (Claude Code CLI engine — Anthropic models: sonnet/haiku/opus/fable)
+
+- 2026-09-07 — sonnet, code-feature (hermes-meal v2 calendar wiring: finish a half-done tools.py integration + tests, 349-line patch, no Bash available, max_attempts 1): the CODE WAS RIGHT — 292 tests + my behaviour smoke passed when I ran the check against its worktree — but the task FAILED on `summary has more than 700 words` (it wrote 1,450). Exported by hand. Two lessons: this lane over-writes summaries when told the section is mandatory, so state the word cap in the spec too; and it CAN do surgical code work blind when the spec names exactly what is missing and the orchestrator runs the tests.
+
+- 2026-09-07 — sonnet, docs (hermes-meal v2: README/SKILL/contracts/4 runbooks/plugin.yaml/LESSONS, ~500-line patch): content was CORRECT (my docs.sh passed against its worktree, exported by hand) but both attempts FAILED the fix-swarm check on `fix-summary.md missing '## Verification'` — in this engine the worker has no Bash (permission_denials show every ls/cat refused), so it skipped the section it couldn't back with a command. $0.36, 4.8k output tokens, 62s. Fix: the spec must say the four summary headings are mandatory and tell the lane to describe what it re-read under Verification. Same lane, same day, with that sentence added: see the r4 docs-calendar result. Don't hand this lane a task whose check needs the worker to run anything.
 
 - 2026-09-03 — claude-lane bring-up, probe (write answer.md, model haiku): PASS attempt 1, 81 tok,
   ~15s, ~$0.05. But it took a long auth fight to get there — the engine is fine, the AUTH is the
@@ -360,6 +391,7 @@ checks and raw logs support — no vibes, no worker self-reports.
 - 2026-07-15 ringer-self-update run (3 serial tasks, direct-repo-edit mode): code-fix baseline-test repair 1/1 first-try (61k tokens, 1.6m); code-feature self-update mechanism (git fetch/ff-pull/re-exec + HUD staleness restart + 20-test suite) 1/1 first-try at high effort (153k, 8.1m); code-feature signal-contract (all 3 scoreboard surfaces + canonical-route lint enforcement) passed on retry (358k, 13.7m) — attempt 1 died on stale old-column assertions in pre-existing tests it hadn't finished updating; the retry prompt's injected FAIL list was enough to close it out. Lesson: when a task rewrites a display contract, name every test file asserting the old contract in the spec's ownership list AND tell it to update them FIRST.
 - 2026-07-09 code-feature/code-fix (ringside-overhaul): 4/4 first-try — a ringer.py logging change with tests, a 265-line stdlib backfill CLI (atomic rewrite, dry-run, idempotence all check-verified), a ~1500-line single-file HTML redesign (running-now pills + worker-card grid + multi-expansion refactor, 30KB patch, node --check + contract greps + unittest), and a render-gating change where it correctly UPDATED tests asserting the old behavior instead of gaming the check. Medium/high reasoning, 65–120k tokens/task.
 - Same day, different session (bench-harness-patches, code-fix): 0.29 first-try over 7 tasks on a Next.js/Turbopack harness. Spec and check quality dominate model choice — see the scoreboard before generalizing either number.
+- 2026-09-03 hermes-update-021-compat (code-fix, high, worktrees): 2/2 code lanes did the work correctly (patches applied cleanly, full suite 39/39 on the host) but both scored TIMEOUT on the check because the verify-command ran the repo's FULL test suite, whose restore tests mount case-sensitive APFS images via hdiutil — blocked in the Codex sandbox, leaving stale mounts that made later runs fail too. Lesson: for this repo scope --verify-command to the lane's own tests (bash tests/run.sh <names>) or mark the hdiutil tests skippable in sandboxes; a check that cannot pass in the sandbox turns a good worker into a 'fail'. Docs lane (medium) passed first try in ~10 min.
 
 ## GPT-5.5 (codex) — attribution caveat
 - Scoreboard rows dated before 2026-07-09 may actually be gpt-5.6: codex eval rows logged model="" until the write-time stamping fix (PR #18) and were credited to GPT-5.5 by the registry default at read time, while the machine's codex default had already moved to gpt-5.6-sol at an unknown earlier date. `scripts/backfill_model_from_logs.py` re-stamps rows with surviving command-log evidence; anything it skips is a mixed-model aggregate. Trust post-2026-07-09 rows.
@@ -390,3 +422,14 @@ checks and raw logs support — no vibes, no worker self-reports.
 ## Process lessons (2026-07-28, PR #82 review)
 - **Ideas worth keeping from a rejected PR.** PR #82's pre-call gateway was dropped (needs your own API key, so it converts flat-rate OAuth plans into metered API billing; incompatible with Claude Code; and it saves tokens by stripping the tool list, which is the thing that makes the CLI worth using). One idea inside it is worth remembering if the problem ever comes back: an *explicitly blessed* answer cache — key a reviewed answer to the exact request plus the exact selected source packet, and replay it with zero upstream calls, never auto-accepting a model answer. It only fires on byte-identical repeats, which is why it didn't justify 2,000 lines here.
 - **Doc-stated support floors need a CI job or they are fiction.** README promised Python 3.11+ while CI only ever ran 3.12; a 3.12-only f-string reached review with a fully green suite. Either test the floor or move it.
+
+## claude (sonnet) — 2026-09-04, docs/code-fix, harness-cleanup run
+- 3 tasks, 3/3 first-try once the harness was right (rounds 1-2 failed on harness, not model): (1) `--add-dir` in engine_args is variadic and swallowed the spec → "Input must be provided" in 6s; terminate it with `--permission-mode acceptEdits`. (2) Workers are denied Read outside cwd/add-dir; stage copies of home-folder inputs into an added dir. Sonnet caught a templating glitch in a spec ($HOME expanded to a literal path) and did the right thing, flagged it in notes.md. ~$0.24–0.40/task at list.
+
+### GPT-5.6 Sol (Codex CLI)
+- 2026-09-22 `finapp-vehicles-inventory` (code-feature x3, medium effort): 2/3 first-try pass,
+  ~46k tokens each on the two that passed. The third "failure" was my check, not the worker — I
+  grepped for `'manual'` in single quotes and the worker wrote Prettier-standard double quotes.
+  It then burned 173k tokens over two attempts rewriting correct code to satisfy a bad check.
+  Lesson (again): quote-style and other formatting greps are exactly the brittle checks the
+  skill warns about. Grep for the identifier, not the punctuation around it.
