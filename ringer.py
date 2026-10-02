@@ -728,6 +728,19 @@ def build_context_packet(
 # End one-request context packet selection.
 
 
+# Per-token API keys never reach a worker. Codex and Claude Code prefer these env vars over
+# their subscription logins (ChatGPT / Max), so an inherited key silently turns a subscription
+# run into a metered API run. OpenCode reads its OpenRouter key from its own auth store.
+WORKER_STRIPPED_ENV = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")
+
+
+def worker_env(environ: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if environ is None else environ)
+    for name in WORKER_STRIPPED_ENV:
+        env.pop(name, None)
+    return env
+
+
 @dataclass(frozen=True)
 class EngineConfig:
     name: str
@@ -9210,6 +9223,7 @@ class RingerRunner:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(runtime.taskdir),
+                    env=worker_env(),
                     stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
