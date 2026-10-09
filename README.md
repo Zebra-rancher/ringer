@@ -161,6 +161,8 @@ A check that cannot fail is trusting the worker with extra steps.
 
 ### Baseline: prove your checks before spending tokens
 
+Normal worktree runs automatically execute every check once on the clean tree before spawning workers. Timeouts and a small set of broken-check signatures stop the run with exit code 2; expected failures continue, and checks that already pass get a warning. Use `--skip-preflight` or `RINGER_SKIP_PREFLIGHT=1` to bypass this step.
+
 Lint reads the manifest; `--baseline` executes it — every task's `check` runs against the unmodified tree, spawning no workers and writing no eval rows:
 
 ```bash
@@ -242,6 +244,8 @@ grok login
 Route with per-task `"engine": "grok"` and pick the model with `"model": "grok-build"` or `"model": "grok-composer-2.5-fast"` (the shipped default — the speed pick). Grok brings its own OS sandbox on macOS (profile `workspace`: read everywhere, writes confined to the task dir, temp, and `~/.grok`), and its JSON output exposes no token counts — plan-billed workers report cost as included in plan.
 
 `args_template` is an argv array, not a shell string. Ringer replaces `{taskdir}`, `{spec}`, and `{model}` inside each argv element. `{access_args}`, `{sandbox_args}`, `{full_access_args}`, `{model_args}` (becomes `-m <resolved model>` when the task or engine names one), and `{engine_args}` (the task's per-task `engine_args`) expand to multiple argv elements only when they appear as their own array item.
+
+An engine can set `token_regexes` to a list of capture patterns instead of the single `token_regex`; Ringer sums the last match of each pattern, counts missing fields as zero, and reports no count when none match. For Claude Code JSON, capture input, cache creation, cache read, and output tokens to report the Max-plan usage figure—all tokens the harness consumed.
 
 Watch for variadic CLI flags. If an engine has a flag that consumes all following values, put `{spec}` before that flag. For Claude-style CLIs, prefer:
 
@@ -333,6 +337,28 @@ Rows that match nothing keep their old `task_type` (empty); rows whose run-state
 
 `docs/MODEL-NOTES.md` is where the human-readable judgment lives on top of these numbers — the scoreboard tells you the pass rates; the notes tell you why a model shines or chokes on a given task shape.
 
+### Jev lane picker (shadow)
+
+Jev (TypeSafe) suggests a lane from `registry/lanes.toml` once before each task's
+first attempt. It never changes the engine, model, or engine arguments. The run
+prints the suggestion alongside the actual route and logs `jev_pick`,
+`jev_confidence`, `jev_lane_engine`, and `jev_lane_model` in JSONL; run state also
+records the pick and confidence. `lint` prints suggestions with local scoreboard
+token estimates when available.
+
+The optional client is loaded from `~/.claude/scripts/jev_call.py`. Missing clients,
+errors, and refusals produce no pick. Configure paths or disable it with:
+
+```toml
+[jev]
+enabled = false
+# client = "~/.claude/scripts/jev_call.py"
+# lanes = "/path/to/ringer/registry/lanes.toml"
+```
+
+Use `RINGER_NO_JEV=1` to disable it everywhere, or `--no-jev` on `run` or `lint`.
+
+
 ### Evidence-based routing
 
 The scoreboard only knows models you've already run. To reason about models you *haven't* tried yet, Ringer keeps a local snapshot of the OpenRouter catalog and a change log alongside the runs log:
@@ -392,6 +418,7 @@ Every community PR that lands in main is credited here — that's a project rule
 - [@davekopecek](https://github.com/davekopecek) (Dave Kopecek) — committed the design-reference fixture so the design-token guard runs on every machine (#30)
 - [@snapsynapse](https://github.com/snapsynapse) (Sam Rogers) — graceful shutdown on SIGINT/SIGTERM with worker-tree cleanup and finished state, plus the 14-test end-to-end CLI regression suite (#4)
 - [@mlava](https://github.com/mlava) (Mark Lavercombe) — named setup failures across every diagnostic surface (#37) and `run --baseline`, the no-workers check preflight (#38)
+- [@Zebra-rancher](https://github.com/Zebra-rancher) (Travis Decker) — claude + gemini subscription engines and model registry entries on this fork (#1, #4)
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the philosophy and what gets a PR merged fast. The short version: small and scoped, rebased on current main, every claim backed by an executed test. Authorship is always preserved — where a maintainer pushes a mechanical fix to your branch, you remain the commit author.
 

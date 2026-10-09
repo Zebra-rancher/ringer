@@ -14,6 +14,10 @@ checks and raw logs support — no vibes, no worker self-reports.
 
 ## codex (GPT-5-class, own harness)
 
+- 2026-10-09 (code-feature, ringer-efficiency round 2): gpt-6-astra implemented four ringer.py process fixes (preflight, stale taskdir recovery, spec-size advisory, token_regexes) correctly on attempt 1 with 14 new tests; the run still showed FAIL x2 (122k tokens) because the spec told it to keep an existing test green that the spec's own fix 2 contradicted. gpt-5.6-sol medium wrote scripts/jev_backtest.py PASS first try (41k). Both lessons are spec defects, not model defects.
+
+- 2026-10-09 (code-feature, ringer-efficiency run): gpt-5.6-sol at CLI default effort wrote scripts/efficiency_report.py + 132-line test (326 lines, 3 tests) PASS first try, 41k tokens, 3 min; one spec ambiguity ("tasks that still failed after the retry": it counted all attempts of those tasks) — say "the final attempt only" when you mean it. gpt-6-astra took the harder multi-region ringer.py change (Jev shadow picker: config, lanes loader, run + lint wiring, 40 tests) PASS first try, 48k tokens, 4 min. Jev's own shadow pick for both tasks was codex-sol-medium (conf 0.96 / 0.68); on the astra task that would have been a downgrade with no evidence yet either way.
+
 - 2026-09-02 — gpt-5.6-sol, code-feature/code-fix (hermes-control-plane build, 7 parallel
   worktree tasks, bash scripts + bash tests with fakes, reasoning medium/high): 5/7 PASS
   first or second try (deploy-lane needed the retry). The two FAILs (backup-crypto 549k tok /
@@ -255,6 +259,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   expect a wasted first attempt and a token bill 10x Codex's.
 
 ## claude (Claude Code CLI engine — Anthropic models: sonnet/haiku/opus/fable)
+
+- 2026-10-09 (probe, model haiku, token_regexes now summing input+cache+output): a 3-line file write cost 44.5k tokens on the Max plan — Claude Code's own system prompt and tool schemas dominate, so the claude lane has a ~45k-token floor per task regardless of model. haiku did the work right first try both runs; the first run FAILED only because the orchestrator's check counted Ringer's own worker.log as a stray file (91k tokens burned by a check bug — the same failure shape as the finapp runs in docs/efficiency/waste-audit.md).
 
 - 2026-09-03 — claude-lane bring-up, probe (write answer.md, model haiku): PASS attempt 1, 81 tok,
   ~15s, ~$0.05. But it took a long auth fight to get there — the engine is fine, the AUTH is the
