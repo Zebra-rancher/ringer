@@ -33,6 +33,12 @@ def _load_module(name: str, path: Path):
 ringer = _load_module("ringer_jev_backtest", ROOT / "ringer.py")
 
 
+
+def _state_digest(state: dict, lanes) -> str:
+    """Cache key: the state AND the question (lane set + criteria). Editing lanes.toml invalidates answers."""
+    question = ringer.jev_lane_question(lanes)
+    return hashlib.sha256(json.dumps({"state": state, "questions": question}, sort_keys=True).encode()).hexdigest()
+
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
     try:
@@ -187,7 +193,7 @@ def backtest(log_path: Path, runs_dir: Path, lanes_path: Path, client_path: Path
             engine=str(raw.get("engine") or ""), task_type=task["task_type"],
         )
         state = ringer.jev_lane_state(task_spec, ringer.jev_check_text(task_spec, None))
-        digest = hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
+        digest = _state_digest(state, lanes)
         answers = cache.get(digest)
         if answers is None:
             if client is None:
@@ -227,7 +233,7 @@ def backtest(log_path: Path, runs_dir: Path, lanes_path: Path, client_path: Path
         "counts": {
             "tasks_seen": len(tasks), "with_spec": with_spec, "asked": with_spec,
             "answered": answered, "no_pick": with_spec - answered,
-            "cached": sum(1 for task in tasks if task.get("has_spec") and _state_is_cached(task, cache)),
+            "cached": sum(1 for task in tasks if task.get("has_spec") and _state_is_cached(task, cache, lanes)),
         },
         "by_task_type": _summaries(tasks),
         "confusion": _confusion(tasks),
@@ -238,14 +244,14 @@ def backtest(log_path: Path, runs_dir: Path, lanes_path: Path, client_path: Path
     return data
 
 
-def _state_is_cached(task: dict[str, Any], cache: dict[str, Any]) -> bool:
+def _state_is_cached(task: dict[str, Any], cache: dict[str, Any], lanes) -> bool:
     raw = task.get("spec_obj")
     if not isinstance(raw, dict):
         return False
     spec = ringer.TaskSpec(key=task["key"], spec=raw["spec"], check=str(raw.get("check") or ""),
                            engine=str(raw.get("engine") or ""), task_type=task["task_type"])
     state = ringer.jev_lane_state(spec, ringer.jev_check_text(spec, None))
-    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest() in cache
+    return _state_digest(state, lanes) in cache
 
 
 def _summary(tasks: list[dict[str, Any]]) -> dict[str, Any]:

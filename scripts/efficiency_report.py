@@ -27,6 +27,7 @@ BUCKET_NAMES = (
 LANES: tuple[tuple[str, str, tuple[str, ...], str | None], ...] = (
     ("claude-haiku", "claude", ("haiku",), None),
     ("claude-sonnet", "claude", ("claude-sonnet-5", "sonnet"), None),
+    ("codex-sol", "codex", ("gpt-5.6-sol",), None),
     ("codex-sol-medium", "codex", ("gpt-5.6-sol",), "medium"),
     ("codex-sol-high", "codex", ("gpt-5.6-sol",), "high"),
     ("codex-astra", "codex", ("gpt-6-astra",), None),

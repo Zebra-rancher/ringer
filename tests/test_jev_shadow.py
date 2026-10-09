@@ -46,7 +46,8 @@ class JevShadowTests(unittest.TestCase):
         lane = self.lanes['codex-sol-medium']
         self.assertEqual(('codex', 'gpt-5.6-sol'), (lane.engine, lane.model))
         self.assertEqual(('-c', 'model_reasoning_effort=medium'), lane.engine_args)
-        self.assertIn('Standard engineering', lane.criteria)
+        self.assertIn('Small, bounded', lane.criteria)
+        self.assertIn('Standard engineering', self.lanes['codex-sol'].criteria)
         self.assertEqual({}, ringer.load_lanes(self.root / 'missing'))
         self.lanes_path.write_text('[broken')
         self.assertEqual({}, ringer.load_lanes(self.lanes_path))

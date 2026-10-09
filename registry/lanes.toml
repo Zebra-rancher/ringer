@@ -21,8 +21,15 @@ evidence = "code-feature 13/23 first-try (57%), research 11/32 (34%); most failu
 engine = "codex"
 model = "gpt-5.6-sol"
 engine_args = ["-c", "model_reasoning_effort=medium"]
-criteria = "Standard engineering work in a repo worktree: implement or fix one feature across a few files, run the existing build and test commands, fix what fails, write notes. The approach is clear from the spec and the files to touch are named."
+criteria = "Small, bounded repo work with reduced reasoning: fix one known bug with a failing test already named, edit docs or config, a one- or two-file change where the spec says exactly what to write and the existing tests are the check."
 evidence = "code-fix 5/5 first-try (median 32k tokens, 2 min), docs 4/4 (84k), code-feature 8/13 (62%, 67k, 5 min)."
+
+[lanes.codex-sol]
+engine = "codex"
+model = "gpt-5.6-sol"
+engine_args = []
+criteria = "Standard engineering work in a repo worktree at the harness's default reasoning effort: implement or fix one feature across a few named files, run the existing build and test commands, fix what fails, write notes. The approach is clear from the spec."
+evidence = "code-feature 22/26 first-try (85%, median 50k tokens, 2 min), code-fix 12/14 (86%, 52k), code-review 2/2, probe 3/3. Effort unrecorded (CLI default)."
 
 [lanes.codex-sol-high]
 engine = "codex"
