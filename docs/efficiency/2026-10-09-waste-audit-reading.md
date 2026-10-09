@@ -13,7 +13,7 @@ Worker tokens only: the orchestrator's own tokens are not in this log (see Measu
 | 2 | Hard tasks at codex high effort that never passed | ~1.1M | 10% | `finapp-estate-edit-export`: 2 tasks x 2 attempts, 100-144k tokens and 6-25 min each, final FAIL (498k). TIMEOUT rows total 565k, incl. `hermes-update-streamline` 255k where the CHECK hit the 60 s cap twice. Codex high effort on code-feature: 2/5 first-try, 118k median tokens, 18 min median. |
 | 3 | The retry lane itself | 2.25M | 20% | 67 retry attempts; 45 of them still failed (1.08M, 10%). Retry rescue rate 33%. Every retry replays the full spec plus the failure output. |
 | 4 | Claude engine used for work it cannot do (Write-only, no Bash, no writes outside cwd) | wall time 2,100 s; tokens under-counted | n/a | research: 21/32 tasks failed first try, 37/53 attempts non-PASS, all "missing expected files" under `~/.cache/...` (a write outside the task dir). code-feature: 10/23 first-try failures, mostly a skipped `notes.md`. The orchestrator redid this work in its own context. |
-| 5 | Oversized specs | tokens 3x | n/a | Codex first-try pass by spec size: 93% under 3k chars (n=14, 25k tokens), 74% at 3-6k (n=70, 82k), 56% at 6-9k (n=16, 73k), 71% at 9k+ (n=14, 79k). Median spec is 4.9k chars; the largest is 17k. |
+| 5 | Oversized specs | tokens 3x | n/a | Codex first-try pass by spec size: 93% under 3k chars (n=14, 25k tokens), 74% at 3-6k (n=70, 82k), 59% at 6-9k (n=17, 74k), 71% at 9k+ (n=14, 79k). Median spec is 4.9k chars; the largest is 17k. |
 
 Also counted: 34 attempts with model `""` (unattributed, 4.09M tokens) from before `model_default`
 was pinned in the codex engine block — a scoreboard blind spot, now closed. Two runs died at setup on

@@ -54,6 +54,7 @@ CONFIG_FILE_NAME = "config.toml"
 DEFAULT_ENGINE_NAME = "codex"
 DEFAULT_TIMEOUT_S = 900
 CHECK_TIMEOUT_S = 60
+SPEC_SIZE_ADVISORY_CHARS = 6000
 DEFAULT_DASHBOARD_PORT_BASE = 8787
 DEFAULT_HUD_PORT = 8700
 DEFAULT_CATALOG_SOURCE = "https://openrouter.ai/api/v1/models"
@@ -742,6 +743,7 @@ class EngineConfig:
     # its own "model" — this is what makes a harness engine (OpenCode) model
     # agnostic instead of hard-coding one model into the command line.
     model_default: str = ""
+    token_regexes: tuple[str, ...] = ()
 
     @property
     def process_name(self) -> str:
@@ -1694,6 +1696,17 @@ def load_engines(raw: Any) -> dict[str, EngineConfig]:
                 re.compile(token_regex, flags=re.IGNORECASE)
             except re.error as exc:
                 raise ValueError(f"engines.{clean_name}.token_regex is invalid: {exc}") from exc
+        raw_token_regexes = section.get("token_regexes", list(base.token_regexes) if base else [])
+        if not isinstance(raw_token_regexes, list) or any(
+            not isinstance(pattern, str) for pattern in raw_token_regexes
+        ):
+            raise ValueError(f"engines.{clean_name}.token_regexes must be a list of regex strings")
+        token_regexes = tuple(raw_token_regexes)
+        for pattern in token_regexes:
+            try:
+                re.compile(pattern, flags=re.IGNORECASE)
+            except re.error as exc:
+                raise ValueError(f"engines.{clean_name}.token_regexes is invalid: {exc}") from exc
         model_report_regex = optional_string(section.get("model_report_regex"))
         if model_report_regex is None and base is not None:
             model_report_regex = base.model_report_regex
@@ -1718,6 +1731,7 @@ def load_engines(raw: Any) -> dict[str, EngineConfig]:
             full_access_args=full_access_args,
             sandbox_args=sandbox_args,
             token_regex=token_regex,
+            token_regexes=token_regexes,
             model_report_regex=model_report_regex,
             model_default=model_default,
         )
@@ -1918,12 +1932,19 @@ def lint_manifest(
     config: AppConfig | None = None,
     identity_registry: ModelIdentityRegistry | None = None,
     allow_noncanonical_route: bool = False,
+    advisories: list[str] | None = None,
 ) -> list[str]:
     findings: list[str] = []
     if manifest.run_name == MODEL_SCOREBOARD_RUN_NAME:
         findings.append("manifest: run_name model-scoreboard is reserved for the scoreboard page.")
 
     for task in manifest.tasks:
+        if advisories is not None and len(task.spec) > SPEC_SIZE_ADVISORY_CHARS:
+            advisories.append(
+                f"{task.key}: spec is {len(task.spec)} chars; in this log codex first-try pass fell "
+                "from 93% under 3k chars to 59% at 6-9k — split the task or move reference "
+                "material into files the worker reads."
+            )
         if check_cannot_fail(task.check):
             findings.append(f"{task.key}: check cannot fail, so the task cannot be verified.")
         if check_may_fail_silently(task.check):
@@ -9025,27 +9046,44 @@ class RingerRunner:
         if self.manifest.worktrees and self.manifest.repo is not None:
             taskdir.parent.mkdir(parents=True, exist_ok=True)
             if taskdir.exists():
-                # Failed tasks keep their worktrees for post-mortems, so a
-                # re-run with the same run_name lands here. Name the exact
-                # command that unblocks it — the bare "already exists" cost a
-                # full diagnosis cycle in the field. A linked worktree has a
-                # .git *file*; only then is `git worktree remove` the right
-                # command, and it must be repo-qualified and quoted to be
-                # paste-safe from anywhere.
                 if (taskdir / ".git").is_file():
-                    remove_cmd = (
-                        f"git -C {shlex.quote(str(self.manifest.repo))} "
-                        f"worktree remove --force {shlex.quote(str(taskdir))}"
+                    proc = await asyncio.create_subprocess_exec(
+                        "git", "-C", str(self.manifest.repo), "worktree", "list", "--porcelain",
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
                     )
+                    stdout, _ = await proc.communicate()
+                    registered = proc.returncode == 0 and f"worktree {taskdir}" in (
+                        stdout.decode("utf-8", errors="replace").splitlines()
+                    )
+                    removed = False
+                    if registered:
+                        proc = await asyncio.create_subprocess_exec(
+                            "git", "-C", str(self.manifest.repo), "worktree", "remove",
+                            "--force", str(taskdir), stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.STDOUT,
+                        )
+                        await proc.communicate()
+                        removed = proc.returncode == 0
+                        if removed:
+                            append_text(
+                                runtime.log_path,
+                                f"[ringer.py] removed stale worktree left by a previous run: {taskdir}\n",
+                            )
+                    if not removed:
+                        remove_cmd = (
+                            f"git -C {shlex.quote(str(self.manifest.repo))} "
+                            f"worktree remove --force {shlex.quote(str(taskdir))}"
+                        )
+                        return False, (
+                            f"worktree taskdir already exists (left by a previous "
+                            f"failed run?): {taskdir} — remove it with "
+                            f"`{remove_cmd}` and re-run"
+                        )
+                else:
                     return False, (
-                        f"worktree taskdir already exists (left by a previous "
-                        f"failed run?): {taskdir} — remove it with "
-                        f"`{remove_cmd}` and re-run"
+                        f"taskdir already exists but is not a registered git "
+                        f"worktree: {taskdir} — move or delete it, then re-run"
                     )
-                return False, (
-                    f"taskdir already exists but is not a registered git "
-                    f"worktree: {taskdir} — move or delete it, then re-run"
-                )
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "-C",
@@ -9269,7 +9307,7 @@ class RingerRunner:
                     await reader
             self.active_processes.pop(proc.pid, None)
         output_tail = capture.text()
-        tokens = parse_token_count(output_tail, engine.token_regex)
+        tokens = parse_token_count(output_tail, engine.token_regex, engine.token_regexes)
         reported_model = parse_reported_model(output_tail, engine.model_report_regex)
         if timed_out:
             append_text(log_path, f"\n[ringer.py] worker timed out after {runtime.task.timeout_s}s\n")
@@ -9576,7 +9614,24 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def parse_token_count(text: str, token_regex: str | None = DEFAULT_TOKEN_REGEX) -> int | None:
+def parse_token_count(
+    text: str,
+    token_regex: str | None = DEFAULT_TOKEN_REGEX,
+    token_regexes: tuple[str, ...] = (),
+) -> int | None:
+    if token_regexes:
+        counts: list[int] = []
+        for pattern in token_regexes:
+            matches = list(re.finditer(pattern, text, flags=re.IGNORECASE))
+            if not matches:
+                continue
+            match = matches[-1]
+            groups = [item for item in match.groups() if item]
+            value = groups[0] if groups else match.group(0)
+            number = re.search(r"([0-9][0-9,]*)", value)
+            if number:
+                counts.append(int(number.group(1).replace(",", "")))
+        return sum(counts) if counts else None
     if token_regex:
         matches = list(re.finditer(token_regex, text, flags=re.IGNORECASE))
         for match in reversed(matches):
@@ -10006,39 +10061,45 @@ def shorten(value: str, limit: int) -> str:
     return clean[: max(0, limit - 3)] + "..."
 
 
-async def run_baseline(manifest: Manifest, *, config: AppConfig) -> int:
-    """Execute every task's CHECK against the unmodified tree. Spawn nothing.
+@dataclass(frozen=True)
+class PreflightResult:
+    key: str
+    ok: bool
+    returncode: int | None
+    timed_out: bool
+    excerpt: str
+    # Preserve baseline's setup errors and cleanup diagnostics separately.
+    error: str | None = None
+    leaked_worktree: str | None = None
+    cleanup_excerpt: str = ""
 
-    The point: a check assertion that encodes NEW behavior is *expected* to
-    fail here, but an assertion that encodes UNCHANGED behavior and fails
-    here is a bug in the check itself — and at run time it will burn a
-    worker's attempts against something no model can satisfy. Running the
-    checks once, before any worker spawns, makes that question answerable in
-    one command. The harness only reports; deciding which failures are
-    expected is the orchestrator's judgment.
 
-    Checks run for real — including any exports or side effects they perform
-    (e.g. a fix-swarm check writing its patch file). Each task gets a fresh
-    scratch taskdir (a detached worktree when the manifest uses worktrees),
-    removed afterwards, so no state leaks between checks or into a later run.
-    """
-    del config  # engines are irrelevant: baseline spawns no workers
+# Keep this list small: "No such file" and "Permission denied" are what an
+# honest not-yet-done check prints.
+PREFLIGHT_FAILURE_RE = re.compile(
+    r"^usage: |syntax error|command not found|Traceback \(most recent call last\)|\bFATAL\b|\bpanic\b",
+    re.MULTILINE,
+)
+
+
+def classify_preflight_failure(result: PreflightResult) -> str:
+    return "broken-check" if result.timed_out or PREFLIGHT_FAILURE_RE.search(result.excerpt) else "expected"
+
+
+async def execute_checks_against_clean_tree(manifest: Manifest) -> list[PreflightResult]:
+    """Run checks in isolated scratch trees, then remove them; never spawn workers."""
     verifier = Verifier()
     worktrees = manifest.worktrees and manifest.repo is not None
     baseline_root = Path(tempfile.mkdtemp(prefix="ringer-baseline-"))
-    total = len(manifest.tasks)
-    print(f"Baseline: executing {total} check(s) with no workers spawned.")
-    failures = 0
-    errors = 0
-    leaked_worktrees: list[str] = []
+    results: list[PreflightResult] = []
     try:
         for task in manifest.tasks:
             taskdir = (baseline_root / task.key).resolve()
             # Same containment rule as the real run path: a key must not
             # escape its scratch root.
             if not taskdir.is_relative_to(baseline_root.resolve()) or taskdir == baseline_root.resolve():
-                errors += 1
-                print(f"{task.key:<24} baseline: ERROR (task key escapes the baseline scratch root)")
+                results.append(PreflightResult(task.key, False, None, False, "",
+                    error="task key escapes the baseline scratch root"))
                 continue
             if worktrees:
                 proc = await asyncio.create_subprocess_exec(
@@ -10056,27 +10117,18 @@ async def run_baseline(manifest: Manifest, *, config: AppConfig) -> int:
                 )
                 stdout, _ = await proc.communicate()
                 if proc.returncode != 0:
-                    errors += 1
-                    print(f"{task.key:<24} baseline: ERROR (git worktree add failed)")
                     message = stdout.decode("utf-8", errors="replace").strip()
-                    for line in message.splitlines()[:4]:
-                        print(f"    {line}")
+                    results.append(PreflightResult(task.key, False, None, False, message,
+                        error="git worktree add failed"))
                     continue
             else:
                 taskdir.mkdir(parents=True, exist_ok=True)
             try:
                 verify = await verifier.verify(task, taskdir)
-                status = "pass" if verify.ok else "FAIL"
-                timed_out = ", timed out" if verify.check_timed_out else ""
-                print(
-                    f"{task.key:<24} baseline: {status} "
-                    f"(rc={verify.check_returncode}{timed_out})"
-                )
-                if not verify.ok:
-                    failures += 1
-                    excerpt = verify.raw_output_excerpt.strip()
-                    for line in excerpt.splitlines()[:6]:
-                        print(f"    {line}")
+                results.append(PreflightResult(
+                    task.key, verify.ok, verify.check_returncode,
+                    verify.check_timed_out, verify.raw_output_excerpt.strip(),
+                ))
             finally:
                 if worktrees:
                     proc = await asyncio.create_subprocess_exec(
@@ -10093,14 +10145,40 @@ async def run_baseline(manifest: Manifest, *, config: AppConfig) -> int:
                     )
                     stdout, _ = await proc.communicate()
                     if proc.returncode != 0:
-                        # A clean summary must not hide leaked worktree state.
-                        leaked_worktrees.append(str(taskdir))
                         message = stdout.decode("utf-8", errors="replace").strip()
-                        print(f"{task.key:<24} baseline: WARNING (worktree remove failed, leaked {taskdir})")
-                        for line in message.splitlines()[:2]:
-                            print(f"    {line}")
+                        results[-1] = dataclass_replace(
+                            results[-1], leaked_worktree=str(taskdir), cleanup_excerpt=message,
+                        )
     finally:
         shutil.rmtree(baseline_root, ignore_errors=True)
+    return results
+
+
+async def run_baseline(manifest: Manifest, *, config: AppConfig) -> int:
+    """Report clean-tree checks without judging whether failures are expected."""
+    del config  # engines are irrelevant: baseline spawns no workers
+    total = len(manifest.tasks)
+    print(f"Baseline: executing {total} check(s) with no workers spawned.")
+    results = await execute_checks_against_clean_tree(manifest)
+    errors = sum(result.error is not None for result in results)
+    failures = sum(not result.ok and result.error is None for result in results)
+    leaked_worktrees = [result.leaked_worktree for result in results if result.leaked_worktree]
+    for result in results:
+        if result.error:
+            print(f"{result.key:<24} baseline: ERROR ({result.error})")
+            for line in result.excerpt.splitlines()[:4]:
+                print(f"    {line}")
+        else:
+            status = "pass" if result.ok else "FAIL"
+            timed_out = ", timed out" if result.timed_out else ""
+            print(f"{result.key:<24} baseline: {status} (rc={result.returncode}{timed_out})")
+            if not result.ok:
+                for line in result.excerpt.splitlines()[:6]:
+                    print(f"    {line}")
+        if result.leaked_worktree:
+            print(f"{result.key:<24} baseline: WARNING (worktree remove failed, leaked {result.leaked_worktree})")
+            for line in result.cleanup_excerpt.splitlines()[:2]:
+                print(f"    {line}")
     passed = total - failures - errors
     print(f"\nbaseline: {passed} pass, {failures} fail, {errors} error of {total} check(s).")
     if leaked_worktrees:
@@ -10116,6 +10194,35 @@ async def run_baseline(manifest: Manifest, *, config: AppConfig) -> int:
         "against something no model can satisfy — fix the check before spawning."
     )
     return 0
+
+
+
+async def run_check_preflight(manifest: Manifest) -> bool:
+    results = await execute_checks_against_clean_tree(manifest)
+    broken = [result for result in results if not result.ok and
+              classify_preflight_failure(result) == "broken-check"]
+    for result in broken:
+        marker = PREFLIGHT_FAILURE_RE.search(result.excerpt)
+        reason = "timed out after 60s" if result.timed_out else marker.group(0).rstrip()
+        print(f"preflight: {result.key}: BROKEN CHECK — {reason}")
+        for line in result.excerpt.splitlines()[:6]:
+            print(f"    {line}")
+    # Setup/cleanup errors mean preflight could not establish a clean result.
+    errors = [result for result in results if result.error or result.leaked_worktree]
+    for result in errors:
+        print(f"preflight: {result.key}: ERROR — {result.error or 'worktree remove failed'}")
+        for line in (result.excerpt if result.error else result.cleanup_excerpt).splitlines()[:6]:
+            print(f"    {line}")
+    if broken or errors:
+        print("preflight: fix the check(s) above or pass --skip-preflight; no workers were spawned.")
+        return False
+    passed = sum(result.ok for result in results)
+    print(f"preflight: {len(results)} check(s) executed on the clean tree; "
+          f"{len(results) - passed} expected-fail, {passed} already-pass, 0 broken.")
+    for result in results:
+        if result.ok:
+            print(f"preflight: {result.key}: check already passes with no worker — it cannot verify the work.")
+    return True
 
 
 def append_text(path: Path, text: str) -> None:
@@ -10952,6 +11059,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="disable zero-LLM HTML status/report artifacts (see [artifact] in config.toml)",
     )
+    run_parser.add_argument("--skip-preflight", action="store_true", help="skip the automatic check preflight that runs every check once against the unmodified tree")
     run_parser.add_argument("--dry-run", action="store_true", help="print the plan without spawning codex")
     run_parser.add_argument(
         "--baseline",
@@ -11188,10 +11296,14 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "lint":
             manifest = Manifest.from_path(args.manifest)
+            advisories: list[str] = []
             findings = lint_manifest(
                 manifest,
+                advisories=advisories,
                 allow_noncanonical_route=args.allow_noncanonical_route,
             )
+            for advisory in advisories:
+                print(f"lint (advisory): {advisory}")
             if findings:
                 print_lint_findings(findings)
             else:
@@ -11230,14 +11342,18 @@ def main(argv: list[str] | None = None) -> int:
         manifest = Manifest.from_path(manifest_path).with_max_parallel(args.max_parallel)
         with contextlib.suppress(Exception):
             print_steering_notes(manifest, config)
+        advisories = []
         lint_findings = lint_manifest(
             manifest,
+            advisories=advisories,
             include_model_log_nudges=True,
             config=config,
             allow_noncanonical_route=bool(
                 getattr(args, "allow_noncanonical_route", False)
             ),
         )
+        for advisory in advisories:
+            print(f"lint (advisory): {advisory}")
         print_lint_findings(lint_findings)
         if any(finding.startswith("ERROR:") for finding in lint_findings):
             return 1
@@ -11262,6 +11378,12 @@ def main(argv: list[str] | None = None) -> int:
             # Deliberately before preflight_engine_bins: baseline spawns no
             # workers, so a missing engine binary must not block it.
             return asyncio.run(run_baseline(manifest, config=config))
+        if (
+            args.command == "run" and manifest.worktrees and manifest.repo is not None
+            and not args.skip_preflight and os.environ.get("RINGER_SKIP_PREFLIGHT") != "1"
+        ):
+            if not asyncio.run(run_check_preflight(manifest)):
+                return 2
         preflight_engine_bins(manifest, config)
         if args.command == "run":
             start_catalog_auto_refresh()

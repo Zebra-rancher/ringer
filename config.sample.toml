@@ -126,6 +126,15 @@ model_report_regex = "(?m)^model:[ \\t]*([^ \\t\\r\\n]+)[ \\t]*\\r?$"
 # also does not self-report a model, so no model_report_regex is configured.
 # token_regex = "\"total_tokens\"\\s*:\\s*([0-9]+)"
 
+# Claude Code JSON usage. Uncomment to enable this optional engine.
+# [engines.claude]
+# bin = "claude"
+# args_template = ["-p", "{spec}", "--output-format", "json", "{access_args}", "{engine_args}"]
+# sandbox_args = []
+# full_access_args = ["--dangerously-skip-permissions"]
+# Max-plan usage figure: all tokens the harness consumed, including input and cache.
+# token_regexes = ['"input_tokens"\s*:\s*([0-9]+)', '"cache_creation_input_tokens"\s*:\s*([0-9]+)', '"cache_read_input_tokens"\s*:\s*([0-9]+)', '"output_tokens"\s*:\s*([0-9]+)']
+
 # For CI, acceptance evals, and trying Ringer without an API bill.
 # [engines.mock]
 # bin = "python3"

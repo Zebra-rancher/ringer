@@ -161,6 +161,8 @@ A check that cannot fail is trusting the worker with extra steps.
 
 ### Baseline: prove your checks before spending tokens
 
+Normal worktree runs automatically execute every check once on the clean tree before spawning workers. Timeouts and a small set of broken-check signatures stop the run with exit code 2; expected failures continue, and checks that already pass get a warning. Use `--skip-preflight` or `RINGER_SKIP_PREFLIGHT=1` to bypass this step.
+
 Lint reads the manifest; `--baseline` executes it — every task's `check` runs against the unmodified tree, spawning no workers and writing no eval rows:
 
 ```bash
@@ -242,6 +244,8 @@ grok login
 Route with per-task `"engine": "grok"` and pick the model with `"model": "grok-build"` or `"model": "grok-composer-2.5-fast"` (the shipped default — the speed pick). Grok brings its own OS sandbox on macOS (profile `workspace`: read everywhere, writes confined to the task dir, temp, and `~/.grok`), and its JSON output exposes no token counts — plan-billed workers report cost as included in plan.
 
 `args_template` is an argv array, not a shell string. Ringer replaces `{taskdir}`, `{spec}`, and `{model}` inside each argv element. `{access_args}`, `{sandbox_args}`, `{full_access_args}`, `{model_args}` (becomes `-m <resolved model>` when the task or engine names one), and `{engine_args}` (the task's per-task `engine_args`) expand to multiple argv elements only when they appear as their own array item.
+
+An engine can set `token_regexes` to a list of capture patterns instead of the single `token_regex`; Ringer sums the last match of each pattern, counts missing fields as zero, and reports no count when none match. For Claude Code JSON, capture input, cache creation, cache read, and output tokens to report the Max-plan usage figure—all tokens the harness consumed.
 
 Watch for variadic CLI flags. If an engine has a flag that consumes all following values, put `{spec}` before that flag. For Claude-style CLIs, prefer:
 
