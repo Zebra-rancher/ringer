@@ -26,6 +26,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   was written. Lesson: on the flat plan, keep a Codex task under ~15 min / ~250k tokens or
   split it; 7 concurrent high-effort lanes drain the plan window in one run. Never retry
   into the limit — verify the exported patch by running the lane tests yourself instead.
+- 2026-10-06 (code-fix, shop-os overlay): two TS/JS fixes. Sidebar inset: PASS first try, 81 s, 34k tokens. Implied-coolant (8 files, pre-committed acceptance tests): code correct and all 456 tests green, but run marked FAIL x2 (125k tokens) because the ORCHESTRATOR's check asserted 11 acceptance tests when the file had 10 - count tests from the file, never by hand. Codex also dodged a conflicting old test with a toJSON hack instead of flagging it; specs should say "if an old test conflicts with the goal, stop and report it".
+
 - Strongest general worker; the default engine. Spend reasoning effort per
   task via `engine_args` (`["-c", "model_reasoning_effort=low|medium|high"]`)
   — high on gnarly tasks, low on boilerplate.
@@ -421,6 +423,8 @@ checks and raw logs support — no vibes, no worker self-reports.
 - **Doc-stated support floors need a CI job or they are fiction.** README promised Python 3.11+ while CI only ever ran 3.12; a 3.12-only f-string reached review with a fully green suite. Either test the floor or move it.
 
 ## claude (sonnet) — 2026-09-04, docs/code-fix, harness-cleanup run
+
+- 2026-10-06 (code-feature x3, shop-os overlay, Sonnet 5 via engine_args granting --add-dir + Read/Edit/Grep/test Bash): all three implementations correct and clean on review; acceptance tests written first and untouched. Runs 1-2 marked FAIL only by orchestrator check bugs (grep for the word "failed" matched test names; hard-coded a version main had passed). Run 3 (8 files, ~490 lines incl. UI): PASS on attempt 2 — attempt 1 finished the code but never wrote notes.md despite saying it did. The default claude engine is Write-only, so repo code tasks NEED the engine_args grant. Also: a session auto-commit hook can commit worker edits mid-run, so diff tests against the test commit SHA, not HEAD.
 - 3 tasks, 3/3 first-try once the harness was right (rounds 1-2 failed on harness, not model): (1) `--add-dir` in engine_args is variadic and swallowed the spec → "Input must be provided" in 6s; terminate it with `--permission-mode acceptEdits`. (2) Workers are denied Read outside cwd/add-dir; stage copies of home-folder inputs into an added dir. Sonnet caught a templating glitch in a spec ($HOME expanded to a literal path) and did the right thing, flagged it in notes.md. ~$0.24–0.40/task at list.
 
 ### GPT-5.6 Sol (Codex CLI)
