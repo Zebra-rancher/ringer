@@ -1,0 +1,47 @@
+# Ringer lanes for the Jev (TypeSafe) lane picker — SHADOW ONLY. Ringer logs the pick next to
+# the model that actually ran; it never changes which engine runs. Criteria text is what Jev
+# reads; the evidence lines come from ~/.ringer/runs.jsonl on 2026-10-09 (docs/efficiency/baseline.md).
+# Subscription lanes only: codex (ChatGPT), claude (Max), gemini. No OpenRouter lane.
+
+[lanes.claude-haiku]
+engine = "claude"
+model = "haiku"
+engine_args = []
+criteria = "Mechanical single-file writes from a fully specified spec: create or overwrite one text, markdown or JSON file whose content the spec dictates, a one-line label, or a conversion whose rule is stated. The check only inspects files the worker writes inside its own task directory. The worker has Write only: no shell commands, no tests to run, no reading or writing outside its task directory."
+evidence = "0 tasks logged (untested)."
+
+[lanes.claude-sonnet]
+engine = "claude"
+model = "sonnet"
+engine_args = []
+criteria = "Bounded writes of a few files from a precise spec where the worker does not need to run anything: draft a doc or notes file, write a small script or test file that the check runs afterwards. The worker has Write only: no Bash, no tests it can run itself, no reading or writing outside its task directory. Not for tasks whose check needs a build or test run the worker must fix iteratively."
+evidence = "code-feature 13/23 first-try (57%), research 11/32 (34%); most failures were tasks that needed a write outside the task directory or a notes.md the worker skipped."
+
+[lanes.codex-sol-medium]
+engine = "codex"
+model = "gpt-5.6-sol"
+engine_args = ["-c", "model_reasoning_effort=medium"]
+criteria = "Standard engineering work in a repo worktree: implement or fix one feature across a few files, run the existing build and test commands, fix what fails, write notes. The approach is clear from the spec and the files to touch are named."
+evidence = "code-fix 5/5 first-try (median 32k tokens, 2 min), docs 4/4 (84k), code-feature 8/13 (62%, 67k, 5 min)."
+
+[lanes.codex-sol-high]
+engine = "codex"
+model = "gpt-5.6-sol"
+engine_args = ["-c", "model_reasoning_effort=high"]
+criteria = "Work that needs sustained reasoning rather than more typing: a code review that must find real defects, a change across many interacting files, a bug with an unknown cause, a migration whose edge cases the spec cannot enumerate."
+evidence = "code-review 8/8 first-try (54k tokens, 6 min); code-feature 2/5 (118k tokens, 18 min; confounded by broken checks on those runs)."
+
+[lanes.codex-astra]
+engine = "codex"
+model = "gpt-6-astra"
+engine_args = []
+criteria = "Hard, judgment-heavy tasks where a cheaper lane would likely burn a retry: an ambiguous spec over unfamiliar code, a large feature spanning UI, server and tests in one task, or a task that already failed once on a cheaper lane."
+evidence = "code-feature 7/7 first-try (49k tokens, 4 min), code-fix 1/1."
+
+[lanes.gemini-flash]
+engine = "gemini"
+model = "gemini-3.5-flash"
+engine_args = []
+criteria = "Fast, cheap transforms with a mechanically checkable output: convert a file from one format to another, extract or reshape data, reformat text to a template, a short summary the check compares against an expected shape."
+evidence = "format-conversion 4/5 first-try (25k tokens, 12 s); code-feature 1/1 but 206k tokens."
+

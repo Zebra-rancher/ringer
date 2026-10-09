@@ -184,3 +184,10 @@ enabled = true
 out = "~/.ringer/artifacts/{run_id}.html"
 report_out = "~/.ringer/artifacts/{run_id}-report.html"
 index_out = "~/.ringer/artifacts/index.html"
+
+# Optional Jev lane picker: observation only; never changes worker routing.
+# [jev]
+# enabled = true
+# client = "~/.claude/scripts/jev_call.py"
+# lanes = "/path/to/ringer/registry/lanes.toml" # defaults to this repo's registry
+# Disable with enabled = false, RINGER_NO_JEV=1, or run/lint --no-jev.

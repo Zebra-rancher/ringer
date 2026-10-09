@@ -333,6 +333,28 @@ Rows that match nothing keep their old `task_type` (empty); rows whose run-state
 
 `docs/MODEL-NOTES.md` is where the human-readable judgment lives on top of these numbers — the scoreboard tells you the pass rates; the notes tell you why a model shines or chokes on a given task shape.
 
+### Jev lane picker (shadow)
+
+Jev (TypeSafe) suggests a lane from `registry/lanes.toml` once before each task's
+first attempt. It never changes the engine, model, or engine arguments. The run
+prints the suggestion alongside the actual route and logs `jev_pick`,
+`jev_confidence`, `jev_lane_engine`, and `jev_lane_model` in JSONL; run state also
+records the pick and confidence. `lint` prints suggestions with local scoreboard
+token estimates when available.
+
+The optional client is loaded from `~/.claude/scripts/jev_call.py`. Missing clients,
+errors, and refusals produce no pick. Configure paths or disable it with:
+
+```toml
+[jev]
+enabled = false
+# client = "~/.claude/scripts/jev_call.py"
+# lanes = "/path/to/ringer/registry/lanes.toml"
+```
+
+Use `RINGER_NO_JEV=1` to disable it everywhere, or `--no-jev` on `run` or `lint`.
+
+
 ### Evidence-based routing
 
 The scoreboard only knows models you've already run. To reason about models you *haven't* tried yet, Ringer keeps a local snapshot of the OpenRouter catalog and a change log alongside the runs log:

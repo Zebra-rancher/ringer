@@ -6,6 +6,7 @@ import asyncio
 import base64
 import contextlib
 import hashlib
+import importlib.util
 import json
 import mimetypes
 import os
@@ -785,6 +786,112 @@ class SteeringConfig:
 
 
 @dataclass(frozen=True)
+class JevConfig:
+    enabled: bool = True
+    client: Path | None = field(default_factory=lambda: Path("~/.claude/scripts/jev_call.py").expanduser())
+    lanes: Path | None = field(default_factory=lambda: Path(__file__).resolve().parent / "registry" / "lanes.toml")
+
+
+def load_jev_config(raw: Any) -> JevConfig:
+    """Optional observation must never prevent loading the base config."""
+    try:
+        section = raw if isinstance(raw, dict) else {}
+        defaults = JevConfig()
+        return JevConfig(
+            enabled=bool(section.get("enabled", True)),
+            client=optional_path(section["client"]) if "client" in section else defaults.client,
+            lanes=optional_path(section["lanes"]) if "lanes" in section else defaults.lanes,
+        )
+    except Exception:
+        return JevConfig()
+
+
+@dataclass(frozen=True)
+class Lane:
+    name: str
+    engine: str
+    model: str
+    engine_args: tuple[str, ...]
+    criteria: str
+    evidence: str
+
+
+@dataclass(frozen=True)
+class JevPick:
+    lane: str
+    confidence: float
+    engine: str
+    model: str
+
+
+def load_lanes(path: Path) -> dict[str, Lane]:
+    try:
+        with path.open("rb") as fh:
+            raw = tomllib.load(fh)["lanes"]
+        lanes = {}
+        for name, value in raw.items():
+            if not all(isinstance(value[key], str) for key in ("engine", "model", "criteria", "evidence")):
+                return {}
+            args = value["engine_args"]
+            if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+                return {}
+            lanes[name] = Lane(name, value["engine"], value["model"], tuple(args), value["criteria"], value["evidence"])
+        return lanes
+    except Exception:
+        return {}
+
+
+def jev_lane_state(task: TaskSpec, check_text: str) -> dict:
+    return {"task_type": task.task_type or "(untyped)", "spec": task.spec[:12000], "check": check_text[:4000]}
+
+
+def jev_check_text(task: TaskSpec, cwd: Path | None) -> str:
+    try:
+        try:
+            tokens = shlex.split(task.check)
+            first = tokens[0] if tokens else ""
+        except ValueError:
+            first = task.check
+        path = Path(first)
+        if not path.is_absolute() and cwd is not None:
+            path = cwd / path
+        if path.is_file():
+            return task.check + "\n" + path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return task.check
+
+
+def jev_lane_question(lanes: dict[str, Lane]) -> dict:
+    return {"lane": {
+        "type": "choice",
+        "instructions": "Pick the cheapest lane that will pass this task's executed check on the first attempt. `task_type`, `spec` and `check` describe one Ringer task: a stateless worker receives `spec`, edits files in a sandbox, then `check` runs and exit 0 is the only pass. Prefer a cheaper lane when its criteria fit; prefer a stronger lane when a cheaper one would likely need a retry.",
+        "criteria": {lane.name: lane.criteria for lane in lanes.values()},
+    }}
+
+
+def jev_pick_lane(config: JevConfig, task: TaskSpec, lanes: dict[str, Lane], *, cwd: Path | None = None, client=None) -> JevPick | None:
+    try:
+        if not config.enabled or os.environ.get("RINGER_NO_JEV") or not lanes:
+            return None
+        if client is None:
+            if config.client is None:
+                return None
+            spec = importlib.util.spec_from_file_location("jev_call", config.client)
+            if spec is None or spec.loader is None:
+                return None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            client = module.ask
+        answers = client("ringer-spec", jev_lane_state(task, jev_check_text(task, cwd)), jev_lane_question(lanes), caller="ringer")
+        answer = answers["lane"]
+        lane = lanes[answer["choice"]]
+        return JevPick(lane.name, float(answer.get("confidence", 0.0)), lane.engine, lane.model)
+    except Exception:
+        return None
+
+
+@dataclass(frozen=True)
 class UpdateConfig:
     auto: bool = True
     check_interval_s: int = DEFAULT_UPDATE_CHECK_INTERVAL_S
@@ -1048,6 +1155,7 @@ class AppConfig:
     artifact: ArtifactConfig
     steering: SteeringConfig = field(default_factory=SteeringConfig)
     update: UpdateConfig = field(default_factory=UpdateConfig)
+    jev: JevConfig = field(default_factory=JevConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "AppConfig":
@@ -1094,6 +1202,7 @@ class AppConfig:
             artifact=artifact_config,
             steering=steering_config,
             update=update_config,
+            jev=load_jev_config(data.get("jev")),
         )
 
 
@@ -2092,6 +2201,7 @@ class TaskRuntime:
     # worktree from a previous failed run). Without this an ERROR verdict at
     # 0.0s carries no diagnostics anywhere the operator looks.
     setup_error: str | None = None
+    jev_pick: JevPick | None = None
     last_worker_command: list[str] = field(default_factory=list)
     steering: dict[str, Any] | None = None
 
@@ -2297,6 +2407,8 @@ class StateWriter:
                     "check_timed_out": runtime.last_check_timed_out,
                     "check_output_tail": shorten(runtime.last_check_output, 4000),
                     "setup_error": runtime.setup_error,
+                    "jev_pick": runtime.jev_pick.lane if runtime.jev_pick else None,
+                    "jev_confidence": runtime.jev_pick.confidence if runtime.jev_pick else None,
                     "timeout_s": runtime.task.timeout_s,
                     "max_attempts": runtime.task.max_attempts,
                     "taskdir": str(runtime.taskdir),
@@ -5762,7 +5874,7 @@ class EvalLogger:
             db_row = {
                 key: value
                 for key, value in row.items()
-                if key not in {"model", "reasoning_effort", "task_type", "retry"}
+                if key not in {"model", "reasoning_effort", "task_type", "retry", "jev_pick", "jev_confidence", "jev_lane_engine", "jev_lane_model"}
             }
             try:
                 self._conn.execute(
@@ -8671,6 +8783,27 @@ class Verifier:
         return proc.returncode, timed_out, output
 
 
+def print_jev_lint(manifest: Manifest, config: AppConfig) -> None:
+    if not config.jev.enabled or os.environ.get("RINGER_NO_JEV"):
+        return
+    lanes = load_lanes(config.jev.lanes)
+    rows, _ = read_model_log_rows(config.eval.jsonl_path)
+    for task in manifest.tasks:
+        pick = jev_pick_lane(config.jev, task, lanes, cwd=manifest.repo or manifest.workdir / task.key)
+        if pick is None:
+            print(f"jev: {task.key}: no pick")
+            continue
+        task_type = task.task_type or "(untyped)"
+        groups = aggregate_model_log_rows(rows, task_type=task_type, model=pick.model)
+        group = next((group for group in groups if group["engine"] == pick.engine), None)
+        estimate = (
+            f"{group['median_tokens']} tokens for {task_type} on that lane (n={group['tasks']})"
+            if group else "no data"
+        )
+        actual = resolved_task_model(task, config.engines.get(task.engine))
+        print(f"jev: {task.key}: suggests {pick.lane} ({pick.engine}/{pick.model}, conf {pick.confidence:.2f}); est. {estimate} | actual: {task.engine}/{actual}")
+
+
 class RingerRunner:
     def __init__(
         self,
@@ -8772,6 +8905,16 @@ class RingerRunner:
             if not prepared:
                 await self._record_prepare_error(runtime, prepare_error or "taskdir preparation failed")
                 return
+            runtime.jev_pick = await asyncio.to_thread(
+                jev_pick_lane, self.config.jev, runtime.task,
+                load_lanes(self.config.jev.lanes), cwd=runtime.taskdir,
+            )
+            pick = runtime.jev_pick
+            if pick is None:
+                print(f"{runtime.task.key:<24} jev: no pick")
+            else:
+                actual = resolved_task_model(runtime.task, self.config.engines.get(runtime.task.engine))
+                print(f"{runtime.task.key:<24} jev: {pick.lane} ({pick.engine}/{pick.model}, conf {pick.confidence:.2f}) actual: {runtime.task.engine}/{actual}")
             current_spec = runtime.task.spec
             max_attempts = runtime.task.max_attempts
             for attempt in range(1, max_attempts + 1):
@@ -9235,6 +9378,10 @@ class RingerRunner:
                 "reasoning_effort": reasoning_effort,
                 "task_type": runtime.task.task_type,
                 "retry": retrying,
+                "jev_pick": runtime.jev_pick.lane if runtime.jev_pick else None,
+                "jev_confidence": runtime.jev_pick.confidence if runtime.jev_pick else None,
+                "jev_lane_engine": runtime.jev_pick.engine if runtime.jev_pick else None,
+                "jev_lane_model": runtime.jev_pick.model if runtime.jev_pick else None,
             }
         )
 
@@ -10792,6 +10939,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run_parser = subparsers.add_parser("run", help="run a ringer manifest")
+    run_parser.add_argument("--no-jev", action="store_true", help="disable shadow lane picker")
     run_parser.add_argument("manifest", type=Path, help="path to ringer.json")
     run_parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     run_parser.add_argument("--max-parallel", type=int, help="override manifest max_parallel")
@@ -10924,6 +11072,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     lint_parser = subparsers.add_parser("lint", help="lint a ringer manifest")
+    lint_parser.add_argument("--no-jev", action="store_true", help="disable shadow lane suggestions")
     lint_parser.add_argument("manifest", type=Path, help="path to ringer.json")
     lint_parser.add_argument(
         "--allow-noncanonical-route",
@@ -11045,14 +11194,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             if findings:
                 print_lint_findings(findings)
-                return 1
-            print(f"lint: clean ({len(manifest.tasks)} tasks)")
-            return 0
+            else:
+                print(f"lint: clean ({len(manifest.tasks)} tasks)")
+            if not args.no_jev and not os.environ.get("RINGER_NO_JEV"):
+                with contextlib.suppress(Exception):
+                    print_jev_lint(manifest, AppConfig.load(args.config))
+            return 1 if findings else 0
 
         if args.command == "catalog":
             return run_catalog_command(args)
 
         config = AppConfig.load(args.config)
+        if getattr(args, "no_jev", False):
+            config = dataclass_replace(config, jev=dataclass_replace(config.jev, enabled=False))
         if args.command == "db":
             return run_db_command(config, args)
         if args.command == "models":
