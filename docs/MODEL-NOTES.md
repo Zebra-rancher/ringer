@@ -14,6 +14,8 @@ checks and raw logs support — no vibes, no worker self-reports.
 
 ## codex (GPT-5-class, own harness)
 
+- 2026-10-09 (code-feature, ringer-efficiency run): gpt-5.6-sol at CLI default effort wrote scripts/efficiency_report.py + 132-line test (326 lines, 3 tests) PASS first try, 41k tokens, 3 min; one spec ambiguity ("tasks that still failed after the retry": it counted all attempts of those tasks) — say "the final attempt only" when you mean it. gpt-6-astra took the harder multi-region ringer.py change (Jev shadow picker: config, lanes loader, run + lint wiring, 40 tests) PASS first try, 48k tokens, 4 min. Jev's own shadow pick for both tasks was codex-sol-medium (conf 0.96 / 0.68); on the astra task that would have been a downgrade with no evidence yet either way.
+
 - 2026-09-02 — gpt-5.6-sol, code-feature/code-fix (hermes-control-plane build, 7 parallel
   worktree tasks, bash scripts + bash tests with fakes, reasoning medium/high): 5/7 PASS
   first or second try (deploy-lane needed the retry). The two FAILs (backup-crypto 549k tok /
