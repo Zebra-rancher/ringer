@@ -16,7 +16,7 @@ CHECK_MARKER = "raw_check_output_first_2000_chars:"
 BUCKET_NAMES = (
     "retry attempts",
     "first attempts that did not PASS",
-    "tasks that still failed after the retry",
+    "all attempts of tasks that ended failed (final attempt non-PASS)",
     "TIMEOUT or ERROR attempts",
     'attempts whose check output starts with "[ringer.py] check timed out" (check hit the 60 s cap)',
     'attempts whose check output starts with "[ringer] missing expected files"',
