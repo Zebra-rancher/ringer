@@ -221,16 +221,10 @@ class SetupErrorDiagnosticsTests(unittest.TestCase):
                 repo.resolve(),
             )
 
-    def test_stale_registered_worktree_names_the_exact_remove_command(self) -> None:
-        combined_output, stale_taskdir, _, _, repo = self.run_with_stale_taskdir(
-            registered_worktree=True
-        )
-        # The command must be paste-safe from anywhere: repo-qualified and
-        # pointing at the resolved taskdir.
-        self.assertIn(
-            f"git -C {repo} worktree remove --force {stale_taskdir}",
-            combined_output,
-        )
+    # A stale REGISTERED worktree is now reclaimed automatically (removed and
+    # re-added) instead of failing setup; tests/test_process_waste.py covers the
+    # recovery and failed-removal cases. Only the plain-directory collision
+    # still refuses.
 
     def test_plain_directory_collision_does_not_claim_a_worktree_command(self) -> None:
         combined_output, _, _, _, _ = self.run_with_stale_taskdir(
