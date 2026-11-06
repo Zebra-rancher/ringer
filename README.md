@@ -113,6 +113,21 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 | `full_access` | Worker runs unsandboxed — required for workers that spawn their own sub-workers; must also be enabled in config |
 | `worktrees` (run-level) | Give each task an isolated git worktree of `repo` so parallel workers can't collide |
 
+### Routine code review routing
+
+Codex manifest tasks with `task_type: "code-review"` and no explicit routing use the
+`codex-review` lane in `registry/lanes.toml`: `gpt-6.1-sol` with
+`model_reasoning_effort=medium`. The resolved model and arguments appear in `run --dry-run`
+and the normal attempt log. This is the only task-type default; Jev stays a shadow suggestion.
+
+For a harder review, select the model and effort explicitly, for example
+`"model": "gpt-6-astra", "engine_args": ["-c", "model_reasoning_effort=high"]`.
+A nonempty task `model`, a different `engine`, or Codex model/effort/provider/profile flags
+in `engine_args` bypass the entire review default. Unrelated extra arguments are retained.
+Task routing takes precedence over the engine-wide `model_default` for unqualified routine
+reviews. Features, fixes, docs, probes, research, test hardening and format conversion keep
+existing explicit/configured selection; Astra remains a choice for deeper reasoning.
+
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
 
 Not sure what your tasks even are yet? [`docs/interview-prompt.md`](docs/interview-prompt.md) is a prompt you paste into any chatbot; it interviews you about the job and hands back a brief your orchestrating agent can turn into a manifest. Ready-made skeletons for the patterns that work live in [`templates/`](templates/).

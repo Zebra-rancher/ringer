@@ -1,6 +1,7 @@
-# Ringer lanes for the Jev (TypeSafe) lane picker — SHADOW ONLY. Ringer logs the pick next to
-# the model that actually ran; it never changes which engine runs. Criteria text is what Jev
-# reads; the evidence lines come from ~/.ringer/runs.jsonl on 2026-10-09 (docs/efficiency/baseline.md).
+# Ringer lanes for the Jev (TypeSafe) shadow picker. Jev suggestions never change workers.
+# The codex-review lane also supplies the approved routine code-review manifest default;
+# explicit routing wins. Other lanes remain suggestions, not task-type defaults.
+# Historical evidence is dated below; see docs/efficiency/baseline.md and the Oct 23 proposal.
 # Subscription lanes only: codex (ChatGPT), claude (Max), gemini. No OpenRouter lane.
 
 [lanes.claude-haiku]
@@ -37,6 +38,16 @@ model = "gpt-5.6-sol"
 engine_args = ["-c", "model_reasoning_effort=high"]
 criteria = "Work that needs sustained reasoning rather than more typing: a code review that must find real defects, a change across many interacting files, a bug with an unknown cause, a migration whose edge cases the spec cannot enumerate."
 evidence = "code-review 8/8 first-try (54k tokens, 6 min); code-feature 2/5 (118k tokens, 18 min; confounded by broken checks on those runs)."
+
+# Approved by Travis 2026-11-05; distinct from historical gpt-5.6-sol lanes.
+# Model/effort: https://developers.openai.com/api/docs/guides/reasoning
+# CLI setting: https://learn.chatgpt.com/docs/config-file/config-reference
+[lanes.codex-review]
+engine = "codex"
+model = "gpt-6.1-sol"
+engine_args = ["-c", "model_reasoning_effort=medium"]
+criteria = "Routine bounded repo code reviews with shell/test access. Default only for Codex code-review manifest tasks without explicit model, reasoning, provider or profile selection. Harder reviews require an explicit operator choice; do not infer a broader default from this lane."
+evidence = "2026-10-23 proposal: codex/gpt-6.1-sol/medium code-review 7/9 first PASS, median 64,569 tokens; observational data, not a causal comparison. Routine-review default approved 2026-11-05."
 
 [lanes.codex-astra]
 engine = "codex"

@@ -1857,6 +1857,30 @@ def require_bool(value: Any, key: str, field: str) -> bool:
     return value
 
 
+def routine_review_defaults(
+    engine: str, model: str, task_type: str, engine_args: tuple[str, ...],
+) -> tuple[str, tuple[str, ...]]:
+    """Apply the one approved task-type default, preserving explicit routing.
+
+    Jev remains shadow-only. A manifest model or Codex routing flag opts out
+    of the whole lane, including its effort, so harder reviews stay explicit.
+    """
+    if engine != "codex" or task_type != "code-review" or model:
+        return model, engine_args
+    for arg in engine_args:
+        if (
+            arg in {"-m", "--model", "-p", "--profile"}
+            or arg.startswith(("--model=", "--profile="))
+            or re.match(r"^-[mp][^-].*", arg)
+            or re.match(r"^(?:-c|--config=)?\s*(?:model|model_reasoning_effort|model_provider|profile)\s*=", arg)
+        ):
+            return model, engine_args
+    lane = load_lanes(Path(__file__).resolve().parent / "registry" / "lanes.toml").get("codex-review")
+    if lane is None or lane.engine != "codex":
+        raise ValueError("routine code-review default requires the codex-review registry lane")
+    return lane.model, lane.engine_args + engine_args
+
+
 @dataclass(frozen=True)
 class TaskSpec:
     key: str
@@ -1926,6 +1950,9 @@ class TaskSpec:
         task_type = obj.get("task_type", "")
         if not isinstance(task_type, str):
             raise ValueError(f"task {key}: task_type must be a string")
+        model, routed_args = routine_review_defaults(
+            engine, model.strip(), task_type.strip(), tuple(engine_args),
+        )
         return cls(
             key=key,
             spec=spec,
@@ -1936,9 +1963,9 @@ class TaskSpec:
             max_attempts=max_attempts,
             redact_spec=require_bool(obj.get("redact_spec", False), key, "redact_spec"),
             full_access=bool(obj.get("full_access", False)),
-            engine_args=tuple(engine_args),
+            engine_args=routed_args,
             verified=verified.strip(),
-            model=model.strip(),
+            model=model,
             task_type=task_type.strip(),
         )
 
