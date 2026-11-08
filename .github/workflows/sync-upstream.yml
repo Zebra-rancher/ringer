@@ -1,0 +1,136 @@
+# Fork-only: keep Zebra-rancher/ringer current with NateBJones-Projects/ringer.
+#
+# Every night this job merges upstream main into the branch `sync/upstream` and opens (or
+# updates) ONE pull request from it into main. It never pushes to main and never merges.
+# Upstream is read-only: the job only fetches from it. [travis-said 2026-11-07] "yes, add the sync"
+#
+# - Up to date with upstream: nothing happens.
+# - Merge conflict: no PR; the job writes the conflicting files to the run summary and fails,
+#   so GitHub emails the owner. (Issues are off on this fork.)
+# - Tests: a PR made with GITHUB_TOKEN does not trigger the `tests` workflow, so this job runs
+#   the suite itself, reports the result in the PR body, and dispatches `tests` on the branch.
+#   A red suite opens the PR as a draft.
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: "17 10 * * *"   # 03:17 Pacific (PDT); 02:17 in winter
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/NateBJones-Projects/ringer.git
+  SYNC_BRANCH: sync/upstream
+
+jobs:
+  sync:
+    if: github.repository == 'Zebra-rancher/ringer'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Merge upstream main onto a fresh sync branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git remote set-url --push upstream DISABLED
+          git fetch --quiet upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          if [ "$behind" -eq 0 ]; then
+            echo "main already contains upstream/main; nothing to do."
+            echo "status=current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git switch -c "$SYNC_BRANCH"
+          if git merge --no-edit upstream/main; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/')
+          git merge --abort
+          echo "status=conflict" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Upstream sync: merge conflict"
+            echo
+            echo "Upstream main has $behind commit(s) that do not merge cleanly into main. Conflicting files:"
+            echo
+            echo "$files"
+            echo
+            echo "Merge \`upstream/main\` into a branch by hand, resolve, and open a PR to main."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::merge conflict with upstream main; see the run summary"
+          exit 1
+
+      - name: Run the test suite on the merged tree
+        id: tests
+        if: steps.merge.outputs.status == 'merged'
+        env:
+          RINGER_NO_SELF_UPDATE: "1"
+        run: |
+          python -m py_compile ringer.py
+          if python -m unittest discover -s tests > tests.log 2>&1; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+          fi
+          tail -n 5 tests.log | tee tests-tail.log
+
+      - name: Push the sync branch and open or update the PR
+        if: steps.merge.outputs.status == 'merged'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEHIND: ${{ steps.merge.outputs.behind }}
+          RESULT: ${{ steps.tests.outputs.result }}
+        run: |
+          # The sync branch is rebuilt from main every night, so a force push to it is expected.
+          git push --force origin "HEAD:refs/heads/$SYNC_BRANCH"
+          commits=$(git log --format='- %h %s' HEAD^1..upstream/main | head -n 40)
+          if [ "$RESULT" = "pass" ]; then verdict="Ubuntu suite: PASS"; else verdict="Ubuntu suite: FAIL — opened as a draft"; fi
+          {
+            echo "Nightly merge of upstream \`NateBJones-Projects/ringer\` main into this fork: $BEHIND new upstream commit(s)."
+            echo
+            echo "$verdict"
+            echo
+            echo '```'
+            cat tests-tail.log
+            echo '```'
+            echo
+            echo "Upstream commits:"
+            echo "$commits"
+            echo
+            echo "This job never merges. Review and merge this PR to bring the fork current; the Macs pull main through Ringer's self-update."
+            echo
+            echo "## Open items"
+            if [ "$RESULT" = "pass" ]; then echo "none"; else echo "- the merged tree fails the Ubuntu suite; see the run log: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
+          } > pr-body.md
+          pr=$(gh pr list --head "$SYNC_BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file pr-body.md
+            if [ "$RESULT" = "pass" ]; then gh pr ready "$pr" 2>/dev/null || true; else gh pr ready "$pr" --undo 2>/dev/null || true; fi
+          else
+            draft=""; [ "$RESULT" = "pass" ] || draft="--draft"
+            gh pr create --base main --head "$SYNC_BRANCH" $draft \
+              --title "Sync with upstream ringer" --body-file pr-body.md
+          fi
+          # Give the PR a check run: workflow_dispatch from GITHUB_TOKEN does start workflows.
+          gh workflow run tests.yml --ref "$SYNC_BRANCH" || true
