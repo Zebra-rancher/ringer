@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_AUTHORS = {
     "jonathan edwards",
     "nate jones",
+    "joshua pierce",  # upstream maintainer side: license-notice commit 5b9a8ec
     "github",
 }
 EXCLUDED_AUTHOR_PREFIXES = ("claude", "cursor")
