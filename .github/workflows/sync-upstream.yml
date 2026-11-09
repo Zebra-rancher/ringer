@@ -1,17 +1,23 @@
 # Fork-only: keep Zebra-rancher/ringer current with NateBJones-Projects/ringer.
 #
 # Every night this job merges upstream main into the branch `sync/upstream` and opens (or
-# updates) ONE pull request from it into main. It never pushes to main and never merges.
+# updates) ONE pull request from it into main. When the suite passes, the job merges that PR
+# itself with a merge commit. It never pushes straight to main.
 # Upstream is read-only: the job only fetches from it. [travis-said 2026-11-07] "yes, add the sync"
+# Auto-merge: [travis-said 2026-11-09] "We need to not have manual work, as long as we are not
+# commiting to nates repo and this is only for my local work, it can auto merge"
+# Every gh call is pinned to this fork by GH_REPO: with an `upstream` remote present, gh could
+# otherwise resolve its default repo to Nate's.
 #
 # - Up to date with upstream: nothing happens.
 # - Merge conflict: no PR; the job writes the conflicting files to the run summary and fails,
 #   so GitHub emails the owner. (Issues are off on this fork.)
-# - Merge the sync PR with a merge commit, never squash: squash drops the upstream parent,
-#   so the next run sees the same commits as new and conflicts.
+# - The merge is a merge commit, never squash: squash drops the upstream parent, so the next
+#   run sees the same commits as new and conflicts. Never merge a sync PR by hand with squash.
 # - Tests: a PR made with GITHUB_TOKEN does not trigger the `tests` workflow, so this job runs
 #   the suite itself, reports the result in the PR body, and dispatches `tests` on the branch.
-#   A red suite opens the PR as a draft.
+#   A red suite opens the PR as a draft and does not merge; that and a merge conflict are the
+#   only cases left for a person.
 name: sync-upstream
 
 on:
@@ -31,6 +37,7 @@ concurrency:
 env:
   UPSTREAM_URL: https://github.com/NateBJones-Projects/ringer.git
   SYNC_BRANCH: sync/upstream
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   sync:
@@ -120,7 +127,7 @@ jobs:
             echo "Upstream commits:"
             echo "$commits"
             echo
-            echo "This job never merges. Merge this PR with **Create a merge commit**, not squash: a squash drops the upstream parent and the next run conflicts on the same commits. The Macs pull main through Ringer's self-update."
+            echo "When the suite passes, this job merges the PR itself with a merge commit. If you merge by hand, use **Create a merge commit**, never squash: a squash drops the upstream parent and the next run conflicts on the same commits. The Macs pull main through Ringer's self-update."
             echo
             echo "## Open items"
             if [ "$RESULT" = "pass" ]; then echo "none"; else echo "- the merged tree fails the Ubuntu suite; see the run log: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
@@ -136,3 +143,8 @@ jobs:
           fi
           # Give the PR a check run: workflow_dispatch from GITHUB_TOKEN does start workflows.
           gh workflow run tests.yml --ref "$SYNC_BRANCH" || true
+          # Green suite: land it now, as a merge commit so main keeps the upstream parent.
+          if [ "$RESULT" = "pass" ]; then
+            gh pr merge "$SYNC_BRANCH" --repo "$GH_REPO" --merge --delete-branch
+            echo "Merged the upstream sync into main ($BEHIND upstream commit(s))." >> "$GITHUB_STEP_SUMMARY"
+          fi
