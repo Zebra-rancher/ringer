@@ -7,6 +7,8 @@
 # - Up to date with upstream: nothing happens.
 # - Merge conflict: no PR; the job writes the conflicting files to the run summary and fails,
 #   so GitHub emails the owner. (Issues are off on this fork.)
+# - Merge the sync PR with a merge commit, never squash: squash drops the upstream parent,
+#   so the next run sees the same commits as new and conflicts.
 # - Tests: a PR made with GITHUB_TOKEN does not trigger the `tests` workflow, so this job runs
 #   the suite itself, reports the result in the PR body, and dispatches `tests` on the branch.
 #   A red suite opens the PR as a draft.
@@ -118,7 +120,7 @@ jobs:
             echo "Upstream commits:"
             echo "$commits"
             echo
-            echo "This job never merges. Review and merge this PR to bring the fork current; the Macs pull main through Ringer's self-update."
+            echo "This job never merges. Merge this PR with **Create a merge commit**, not squash: a squash drops the upstream parent and the next run conflicts on the same commits. The Macs pull main through Ringer's self-update."
             echo
             echo "## Open items"
             if [ "$RESULT" = "pass" ]; then echo "none"; else echo "- the merged tree fails the Ubuntu suite; see the run log: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
